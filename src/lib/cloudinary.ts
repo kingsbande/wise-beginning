@@ -16,7 +16,7 @@
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string
 
-export async function uploadStudentPhoto(file: File): Promise<string> {
+export async function uploadImage(file: File): Promise<string> {
   if (!CLOUD_NAME || !UPLOAD_PRESET) {
     throw new Error('Missing VITE_CLOUDINARY_CLOUD_NAME or VITE_CLOUDINARY_UPLOAD_PRESET in .env')
   }
@@ -37,4 +37,10 @@ export async function uploadStudentPhoto(file: File): Promise<string> {
 
   const data = await res.json()
   return data.secure_url as string
+}
+
+// Kept as a thin wrapper so existing imports (StudentRegistrationForm,
+// EditStudentForm) don't need to change.
+export async function uploadStudentPhoto(file: File): Promise<string> {
+  return uploadImage(file)
 }

@@ -1,10 +1,24 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // Polyfill globalThis for older browsers/WebViews (e.g., Chrome < 71 on older Android versions)
+      if (typeof globalThis === 'undefined') {
+        window.globalThis = window;
+      }
+    </script>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Wise Beginning" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <link rel="icon" type="image/png" href="/src/assets/logo.png" />
-    <title>Student Registration</title>
+    <link rel="apple-touch-icon" href="/src/assets/logo.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Wise Beginning</title>
   </head>
   <body>
     <div id="root"></div>

@@ -1,16 +1,13 @@
 import { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { LoadingScreen } from './LoadingScreen'
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { session, profile, loading } = useAuth()
 
   if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center text-gray-500">
-        Checking your access...
-      </div>
-    )
+    return <LoadingScreen />
   }
 
   if (!session) {
