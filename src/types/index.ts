@@ -1,4 +1,4 @@
-export type UserRole = 'admin'
+export type UserRole = 'admin' | 'headteacher' | 'teacher'
 
 export type StudentStatus = 'active' | 'withdrawn' | 'graduated' | 'transferred'
 
@@ -11,6 +11,8 @@ export interface Profile {
   school_logo_url: string | null
   school_registration_terms: string | null
   avatar_url: string | null // NEW
+  must_change_password: boolean
+  username: string | null // NEW
 }
 
 export interface ParentAccount {
@@ -106,4 +108,48 @@ export interface NewStudentInput {
   date_joined: string
   government_code: string
   photo_url: string | null
+}
+
+export interface TeacherDetails {
+  id: string
+  date_of_birth: string | null
+  national_id: string | null
+  home_address: string | null
+  personal_phone: string | null
+  personal_email: string | null
+  emergency_contact_name: string | null
+  emergency_contact_phone: string | null
+  highest_degree: string | null
+  major: string | null
+  resume_summary: string | null
+  employee_id: string | null
+  date_of_hire: string | null
+  contract_type: 'full_time' | 'part_time' | 'substitute' | null
+  salary_grade: string | null
+}
+
+export interface TeacherCertification {
+  id: string
+  teacher_id: string
+  title: string
+  issuing_body: string | null
+  issued_date: string | null
+  expiry_date: string | null
+}
+
+export interface TeacherAssignment {
+  id: string
+  teacher_id: string
+  class_id: string
+  subject_id: string
+  class_name: string
+  subject_name: string
+}
+
+export interface StaffMember {
+  id: string
+  full_name: string
+  role: 'teacher' | 'headteacher'
+  avatar_url: string | null
+  created_at: string
 }

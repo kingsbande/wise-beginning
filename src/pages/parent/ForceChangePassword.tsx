@@ -85,11 +85,11 @@ export function ForceChangePassword() {
         {/* Card container with anchor positioning */}
         <div className="relative mt-14 rounded-2xl border border-white/10 bg-white/5 p-8 pt-16 text-center shadow-2xl shadow-black/40 backdrop-blur">
           {/* Perfectly centered floating circular logo badge */}
-          <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 rounded-full border-2 border-white/10 bg-white p-2 shadow-xl">
+          <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 overflow-hidden rounded-full border-2 border-white/10 bg-white p-2 shadow-xl">
             <img
               src={logo}
               alt="Wise Beginning logo"
-              className="h-full w-full rounded-full object-contain"
+              className="h-full w-full rounded-full object-cover"
             />
           </div>
 

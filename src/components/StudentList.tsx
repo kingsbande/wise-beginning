@@ -26,6 +26,7 @@ const STATUS_BADGE_STYLES: Record<StudentStatus, string> = {
 export function StudentList() {
   const queryClient = useQueryClient()
   const { profile } = useAuth()
+  const canEditStudents = profile?.role !== 'headteacher'
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
@@ -215,10 +216,11 @@ export function StudentList() {
                       <td className="py-2 pr-4">
                         <select
                           value={s.status}
+                          disabled={!canEditStudents}
                           onChange={(e) =>
                             setPendingStatusChange({ student: s, newStatus: e.target.value as StudentStatus })
                           }
-                          className={`rounded-full border px-2 py-1 text-xs font-medium focus:outline-none ${STATUS_BADGE_STYLES[s.status]}`}
+                          className={`rounded-full border px-2 py-1 text-xs font-medium focus:outline-none disabled:cursor-not-allowed disabled:opacity-70 ${STATUS_BADGE_STYLES[s.status]}`}
                         >
                           {(Object.keys(STATUS_LABELS) as StudentStatus[]).map((st) => (
                             <option key={st} value={st}>
@@ -238,15 +240,17 @@ export function StudentList() {
                           >
                             {expandedId === s.id ? 'Hide' : 'Details'}
                           </button>
-                          <button
-                            onClick={() => {
-                              setEditingId(editingId === s.id ? null : s.id)
-                              setExpandedId(null)
-                            }}
-                            className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
-                          >
-                            {editingId === s.id ? 'Cancel' : 'Edit'}
-                          </button>
+                          {canEditStudents && (
+                            <button
+                              onClick={() => {
+                                setEditingId(editingId === s.id ? null : s.id)
+                                setExpandedId(null)
+                              }}
+                              className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
+                            >
+                              {editingId === s.id ? 'Cancel' : 'Edit'}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -305,19 +309,21 @@ export function StudentList() {
                             </div>
                           </dl>
 
-                          <div className="mt-4 border-t border-slate-200 pt-3">
-                            <p className="text-xs text-slate-400">
-                              Only use this for a genuine duplicate entry — it permanently erases this
-                              student's grades, progress reports, and notification history. For a
-                              student who has left, use the Status dropdown above instead.
-                            </p>
-                            <button
-                              onClick={() => setPendingHardDelete(s)}
-                              className="mt-2 text-xs font-medium text-red-700 underline hover:text-red-900"
-                            >
-                              Permanently Delete (duplicate entry)
-                            </button>
-                          </div>
+                          {canEditStudents && (
+                            <div className="mt-4 border-t border-slate-200 pt-3">
+                              <p className="text-xs text-slate-400">
+                                Only use this for a genuine duplicate entry — it permanently erases this
+                                student's grades, progress reports, and notification history. For a
+                                student who has left, use the Status dropdown above instead.
+                              </p>
+                              <button
+                                onClick={() => setPendingHardDelete(s)}
+                                className="mt-2 text-xs font-medium text-red-700 underline hover:text-red-900"
+                              >
+                                Permanently Delete (duplicate entry)
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}

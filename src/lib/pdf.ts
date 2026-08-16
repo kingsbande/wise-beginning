@@ -97,17 +97,98 @@ export async function generateRegistrationConfirmationPdf(params: {
   y += 14
 
   if (params.termsAndConditions && params.termsAndConditions.trim() !== '') {
-    doc.setFontSize(10)
+    // Add a professional divider line before the terms and conditions
+    y += 10
+    if (y > 270) {
+      doc.addPage()
+      y = 20
+    }
+    doc.setDrawColor(220, 225, 230)
+    doc.line(20, y, 190, y)
+    y += 10
+
+    doc.setFontSize(11)
     doc.setFont('helvetica', 'bold')
+    doc.setTextColor(30, 41, 59) // slate-800 color for a professional look
     doc.text('Terms & Conditions', 20, y)
-    y += 6
+    y += 8
+    
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
-    const wrappedTerms = doc.splitTextToSize(params.termsAndConditions, 170)
-    doc.text(wrappedTerms, 20, y)
-    y += wrappedTerms.length * 5
+    doc.setFontSize(9.5)
+    doc.setTextColor(71, 85, 105) // slate-600 color for readable body text
+
+    const lines = params.termsAndConditions.split(/\r?\n/)
+    for (const line of lines) {
+      const trimmedLine = line.trim()
+      if (trimmedLine === '') {
+        y += 5 // Paragraph break spacing
+        continue
+      }
+
+      // Check if it's a short all-caps title or subheading
+      const isSubheading = trimmedLine.length < 50 && trimmedLine === trimmedLine.toUpperCase() && !trimmedLine.match(/^[\d\-\•\.\s]+$/)
+
+      if (isSubheading) {
+        y += 4 // Extra spacing above subheading
+        if (y > 275) {
+          doc.addPage()
+          y = 20
+        }
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(30, 41, 59)
+        doc.setFontSize(10)
+        doc.text(trimmedLine, 20, y)
+        y += 6
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9.5)
+        doc.setTextColor(71, 85, 105)
+        continue
+      }
+
+      // Detect list/numbered items (e.g. "1. ", "- ", "• ") to implement hanging indents
+      const listMatch = trimmedLine.match(/^(\d+\.|[\-\•\*\u2022])\s+(.*)/)
+
+      if (listMatch) {
+        const marker = listMatch[1]
+        const content = listMatch[2]
+        
+        doc.setFont('helvetica', 'bold')
+        doc.text(marker, 20, y)
+        doc.setFont('helvetica', 'normal')
+        
+        // Wrap content with indentation
+        const wrappedLines = doc.splitTextToSize(content, 160) // narrower width to accommodate indent
+        let isFirstLine = true
+        for (const wrappedLine of wrappedLines) {
+          if (y > 280) {
+            doc.addPage()
+            y = 20
+          }
+          // Indent wrapped lines to align nicely under the text
+          const indentX = 28
+          doc.text(wrappedLine, indentX, y)
+          y += 5.5
+          isFirstLine = false
+        }
+        y += 1.5 // Extra spacing between list items
+      } else {
+        // Standard wrapped body text paragraph
+        const wrappedLines = doc.splitTextToSize(trimmedLine, 170)
+        for (const wrappedLine of wrappedLines) {
+          if (y > 280) {
+            doc.addPage()
+            y = 20
+          }
+          doc.text(wrappedLine, 20, y)
+          y += 5.5
+        }
+        y += 2 // Paragraph spacer
+      }
+    }
   }
 
+  // Restore defaults
+  doc.setTextColor(0, 0, 0)
   doc.save(`${params.studentName.replace(/\s+/g, '_')}_registration_confirmation.pdf`)
 }
 

@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, full_name, role, school_id, avatar_url, schools ( name, logo_url, registration_terms )',
+        'id, full_name, role, school_id, avatar_url, must_change_password, username, schools ( name, logo_url, registration_terms )',
       )
       .eq('id', userId)
       .single()
@@ -36,6 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: Profile['role']
         school_id: string
         avatar_url: string | null
+        must_change_password: boolean
+        username: string | null
         schools: { name: string; logo_url: string | null; registration_terms: string | null } | null
       }
       setProfile({
@@ -47,6 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         school_logo_url: row.schools?.logo_url ?? null,
         school_registration_terms: row.schools?.registration_terms ?? null,
         avatar_url: row.avatar_url,
+        must_change_password: row.must_change_password,
+        username: row.username,
       })
     } else {
       setProfile(null)

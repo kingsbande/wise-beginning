@@ -6,23 +6,37 @@ import { LoadingScreen } from '../components/LoadingScreen'
 import { InstallButton } from '../components/InstallButton'
 import { IosInstallHint } from '../components/IosInstallHint'
 
-// Parents sign in with just their username (no "@"), which maps to
-// this synthetic address created for them under the hood at
-// account-creation time. Admins sign in with a real email — the "@"
-// in what they type is what tells the two cases apart.
+// Parents and staff both sign in with just a username (no "@") —
+// each maps to a synthetic address created for them under the hood
+// at account-creation time. Since both populations now use bare
+// usernames, a plain "no @ = parent" check no longer works; we try
+// both domains and see which one actually has a matching account.
+// The original director/admin account (created directly in
+// Supabase, not through either flow) still uses a real email, so
+// the "@" check still shortcuts straight past all of this for them.
 const PARENT_EMAIL_DOMAIN = 'parents.app'
+const STAFF_EMAIL_DOMAIN = 'staff.app'
 
-type Destination = '/admin' | '/parent' | '/parent/change-password'
+type Destination =
+  | '/admin'
+  | '/headteacher'
+  | '/teacher'
+  | '/staff/change-password'
+  | '/parent'
+  | '/parent/change-password'
 
 async function resolveDestination(userId: string): Promise<Destination | null> {
-  const { data: adminProfile } = await supabase
+  const { data: staffProfile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, must_change_password')
     .eq('id', userId)
     .maybeSingle()
 
-  if (adminProfile?.role === 'admin') {
-    return '/admin'
+  if (staffProfile) {
+    if (staffProfile.must_change_password) return '/staff/change-password'
+    if (staffProfile.role === 'admin') return '/admin'
+    if (staffProfile.role === 'headteacher') return '/headteacher'
+    if (staffProfile.role === 'teacher') return '/teacher'
   }
 
   const { data: parentAccount } = await supabase
@@ -38,6 +52,30 @@ async function resolveDestination(userId: string): Promise<Destination | null> {
   return null
 }
 
+// Tries the parent domain first, then the staff domain, and returns
+// whichever one actually authenticates. Both attempts fail silently
+// (no error shown) unless neither works — the caller decides what
+// to tell the user.
+async function attemptUsernameSignIn(username: string, password: string) {
+  const parentAttempt = await supabase.auth.signInWithPassword({
+    email: `${username}@${PARENT_EMAIL_DOMAIN}`,
+    password,
+  })
+  if (!parentAttempt.error && parentAttempt.data.user) {
+    return parentAttempt.data.user
+  }
+
+  const staffAttempt = await supabase.auth.signInWithPassword({
+    email: `${username}@${STAFF_EMAIL_DOMAIN}`,
+    password,
+  })
+  if (!staffAttempt.error && staffAttempt.data.user) {
+    return staffAttempt.data.user
+  }
+
+  return null
+}
+
 export function Login() {
   const navigate = useNavigate()
   const [identifier, setIdentifier] = useState('')
@@ -46,8 +84,8 @@ export function Login() {
   const [submitting, setSubmitting] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
 
-  // Returning to /login with a live session (either role) skips
-  // straight to the right dashboard instead of showing the form.
+  // Returning to /login with a live session (any role) skips
+  // straight to the right destination instead of showing the form.
   useEffect(() => {
     let cancelled = false
 
@@ -90,19 +128,30 @@ export function Login() {
     setSubmitting(true)
 
     const trimmed = identifier.trim()
-    const email = trimmed.includes('@')
-      ? trimmed
-      : `${trimmed.toLowerCase()}@${PARENT_EMAIL_DOMAIN}`
 
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    let userId: string | null = null
 
-    if (signInError || !data.user) {
+    if (trimmed.includes('@')) {
+      // Real email — the original admin/director account.
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: trimmed,
+        password,
+      })
+      if (!signInError && data.user) {
+        userId = data.user.id
+      }
+    } else {
+      const user = await attemptUsernameSignIn(trimmed.toLowerCase(), password)
+      userId = user?.id ?? null
+    }
+
+    if (!userId) {
       setSubmitting(false)
       setError('Invalid email/username or password.')
       return
     }
 
-    const destination = await resolveDestination(data.user.id)
+    const destination = await resolveDestination(userId)
 
     if (!destination) {
       await supabase.auth.signOut()
@@ -144,11 +193,11 @@ export function Login() {
 
       <div className="relative w-full max-w-sm">
         <div className="relative mt-14 rounded-2xl border border-white/10 bg-white/5 p-8 pt-16 text-center shadow-2xl shadow-black/40 backdrop-blur">
-          <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 rounded-full border-2 border-white/10 bg-white p-2 shadow-xl">
+          <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 overflow-hidden rounded-full border-2 border-white/10 bg-white p-0 shadow-xl">
             <img
               src={logo}
               alt="Wise Beginning logo"
-              className="h-full w-full rounded-full object-contain"
+              className="h-full w-full rounded-full object-cover"
             />
           </div>
 

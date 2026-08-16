@@ -10,6 +10,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings as SettingsIcon,
+  UserCog,
   UserPlus,
   Users,
   X,
@@ -20,6 +21,7 @@ import { StudentRegistrationForm } from '../components/StudentRegistrationForm'
 import { StudentList } from '../components/StudentList'
 import { Grades } from '../pages/Grades'
 import { SettingsPage } from '../pages/Settings'
+import { Staff } from '../pages/Staff'
 import { supabase } from '../lib/supabaseClient'
 import logo from '../assets/logo.png'
 
@@ -27,9 +29,10 @@ interface DashboardStats {
   totalStudents: number
   maleStudents: number
   femaleStudents: number
+  totalStaff: number
 }
 
-type View = 'overview' | 'register' | 'students' | 'parents' | 'grades' | 'settings'
+type View = 'overview' | 'register' | 'students' | 'parents' | 'grades' | 'staff' | 'settings'
 
 const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -37,6 +40,7 @@ const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'students', label: 'Student Records', icon: BookOpen },
   { id: 'parents', label: 'Parent Accounts', icon: Users },
   { id: 'grades', label: 'Grades', icon: BarChart3 },
+  { id: 'staff', label: 'Staff', icon: UserCog },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ]
 
@@ -59,6 +63,7 @@ export function AdminDashboard() {
     totalStudents: 0,
     maleStudents: 0,
     femaleStudents: 0,
+    totalStaff: 0,
   })
 
   // Close the profile dropdown when clicking outside of it
@@ -79,29 +84,31 @@ export function AdminDashboard() {
   // client-side. Scales the same whether there are 20 students or
   // 20,000.
   useEffect(() => {
-  async function loadStats() {
-    const [totalResult, maleResult] = await Promise.all([
-      supabase.from('students').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      supabase
-        .from('students')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'active')
-        .eq('gender', 'male'),
-    ])
+    async function loadStats() {
+      const [totalResult, maleResult, staffResult] = await Promise.all([
+        supabase.from('students').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+        supabase
+          .from('students')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'active')
+          .eq('gender', 'male'),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      ])
 
-    const total = totalResult.count ?? 0
-    const male = maleResult.count ?? 0
+      const total = totalResult.count ?? 0
+      const male = maleResult.count ?? 0
+      const totalStaff = staffResult.count ?? 0
 
-    setStats({
-      totalStudents: total,
-      maleStudents: male,
-      femaleStudents: total - male,
-    })
-  }
+      setStats({
+        totalStudents: total,
+        maleStudents: male,
+        femaleStudents: total - male,
+        totalStaff,
+      })
+    }
 
-  loadStats()
-}, [refreshKey])
-
+    loadStats()
+  }, [refreshKey])
 
   // Lock body scroll while the off-canvas menu is open on mobile
   useEffect(() => {
@@ -319,10 +326,10 @@ export function AdminDashboard() {
           />
         )}
 
-        {/* Sidebar: fixed off-canvas drawer on mobile, static + collapsible on desktop */}
+        {/* Sidebar: fixed off-canvas drawer on mobile, static sticky + collapsible on desktop */}
         <aside
           id="admin-sidebar"
-          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] overflow-y-auto rounded-none border-r border-slate-200 bg-white p-3 shadow-2xl transition-transform duration-300 ease-in-out sm:p-4 lg:static lg:z-auto lg:max-w-none lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
+          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] overflow-y-auto rounded-none border-r border-slate-200 bg-white p-3 shadow-2xl transition-transform duration-300 ease-in-out sm:p-4 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:z-auto lg:max-w-none lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
             isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
           } ${isSidebarCollapsed ? 'lg:w-24' : 'lg:w-72'}`}
         >
@@ -485,8 +492,8 @@ export function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Desktop / tablet: three separate stat cards */}
-              <div className="hidden sm:grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Desktop / tablet: four separate stat cards */}
+              <div className="hidden sm:grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
@@ -548,6 +555,21 @@ export function AdminDashboard() {
                     {stats.totalStudents > 0 ? `${femalePct}% of enrollment` : 'No students yet'}
                   </p>
                 </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                      <UserCog className="h-5 w-5" />
+                    </div>
+                    <p className="text-sm text-slate-500">Total Staff</p>
+                  </div>
+                  <p className="mt-3 text-3xl font-semibold text-slate-900">
+                    {stats.totalStaff}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Active staff accounts
+                  </p>
+                </div>
               </div>
 
               {/* Quick actions */}
@@ -587,6 +609,13 @@ export function AdminDashboard() {
                     >
                       <BarChart3 className="h-4 w-4 text-slate-600" />
                       View grades
+                    </button>
+                    <button
+                      onClick={() => setActiveView('staff')}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                    >
+                      <UserCog className="h-4 w-4 text-slate-600" />
+                      Manage staff
                     </button>
                   </div>
                 </div>
@@ -637,14 +666,14 @@ export function AdminDashboard() {
                 <span>Grades</span>
               </button>
               <button
-                onClick={() => handleNavSelect('parents')}
-                aria-current={activeView === 'parents' ? 'page' : undefined}
+                onClick={() => handleNavSelect('staff')}
+                aria-current={activeView === 'staff' ? 'page' : undefined}
                 className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs ${
-                  activeView === 'parents' ? 'text-rose-600' : 'text-slate-600'
+                  activeView === 'staff' ? 'text-rose-600' : 'text-slate-600'
                 }`}
               >
-                <Users className="h-5 w-5" />
-                <span>More</span>
+                <UserCog className="h-5 w-5" />
+                <span>Staff</span>
               </button>
             </div>
           </nav>
@@ -660,6 +689,8 @@ export function AdminDashboard() {
           {activeView === 'parents' && <ParentAccounts />}
 
           {activeView === 'grades' && <Grades />}
+
+          {activeView === 'staff' && <Staff />}
 
           {activeView === 'settings' && <SettingsPage />}
         </section>

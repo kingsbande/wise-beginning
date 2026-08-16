@@ -7,6 +7,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { ParentProtectedRoute } from './components/parent/ParentProtectedRoute'
 import { LoadingScreen } from './components/LoadingScreen'
 
+
 // Each page is its own chunk now — the browser only downloads and
 // executes Login's code (plus shared vendor libs) to show the login
 // screen, instead of the whole app including jsPDF, the admin
@@ -25,6 +26,18 @@ const ForceChangePassword = lazy(() =>
 const ParentDashboard = lazy(() =>
   import('./pages/parent/ParentDashboard').then((m) => ({ default: m.ParentDashboard })),
 )
+const HeadteacherDashboard = lazy(() =>
+  import('./pages/HeadteacherDashboard').then((m) => ({ default: m.HeadteacherDashboard })),
+)
+const TeacherDashboard = lazy(() =>
+  import('./pages/TeacherDashboard').then((m) => ({ default: m.TeacherDashboard })),
+)
+const Staff = lazy(() => import('./pages/Staff').then((m) => ({ default: m.Staff })))
+const ForceChangePasswordStaff = lazy(() =>
+  import('./pages/staff/ForceChangePasswordStaff').then((m) => ({
+    default: m.ForceChangePasswordStaff,
+  })),
+)
 
 function ParentLayout() {
   return (
@@ -42,10 +55,11 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/parent/login" element={<Login />} />
+            <Route path="/staff/change-password" element={<ForceChangePasswordStaff />} />
             <Route
               path="/admin"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['admin']}>
                   <ErrorBoundary>
                     <AdminDashboard />
                   </ErrorBoundary>
@@ -55,7 +69,7 @@ export default function App() {
             <Route
               path="/admin/parent-accounts"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['admin']}>
                   <ErrorBoundary>
                     <ParentAccounts />
                   </ErrorBoundary>
@@ -65,9 +79,39 @@ export default function App() {
             <Route
               path="/admin/grades"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['admin']}>
                   <ErrorBoundary>
                     <Grades />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/staff"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <ErrorBoundary>
+                    <Staff />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/headteacher"
+              element={
+                <ProtectedRoute allowedRoles={['headteacher']}>
+                  <ErrorBoundary>
+                    <HeadteacherDashboard />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher"
+              element={
+                <ProtectedRoute allowedRoles={['teacher']}>
+                  <ErrorBoundary>
+                    <TeacherDashboard />
                   </ErrorBoundary>
                 </ProtectedRoute>
               }
