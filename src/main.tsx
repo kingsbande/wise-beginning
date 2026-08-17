@@ -8,11 +8,17 @@ import { registerSW } from 'virtual:pwa-register'
 let updateSW: (() => Promise<void>) | undefined
 
 // Delay SW registration to prevent blocking on older Android versions
-if (navigator.serviceWorker) {
-  navigator.serviceWorker.ready.then(() => {
+if ('serviceWorker' in navigator) {
+  const register = () => {
     updateSW = registerSW({
       onRegistered(r: ServiceWorkerRegistration | undefined) {
         console.log('Service worker registered:', r)
+        // Check for updates every hour
+        if (r) {
+          setInterval(() => {
+            r.update()
+          }, 60 * 60 * 1000)
+        }
       },
       onRegisterError(error: unknown) {
         console.error('Service worker registration failed:', error)
@@ -24,7 +30,13 @@ if (navigator.serviceWorker) {
         })
       },
     })
-  })
+  }
+
+  if (document.readyState === 'complete') {
+    register()
+  } else {
+    window.addEventListener('load', register)
+  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

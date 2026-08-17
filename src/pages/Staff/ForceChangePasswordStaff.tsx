@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../context/AuthContext'
+import logo from '../../assets/logo.png'
 
 export function ForceChangePasswordStaff() {
   const { session, profile, loading, refreshProfile } = useAuth()
@@ -63,46 +64,96 @@ export function ForceChangePasswordStaff() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-semibold text-gray-900">Set a New Password</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          For your security, please choose a new password before continuing.
-        </p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-rose-900 px-4">
+      {/* Same decorative wave used on the admin login and dashboard hero, for continuity */}
+      <svg
+        className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 text-white/10"
+        viewBox="0 0 200 200"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path d="M10 100 C 50 40, 150 40, 190 100 C 150 160, 50 160, 10 100 Z" stroke="currentColor" strokeWidth="1" />
+        <path d="M30 100 C 60 60, 140 60, 170 100 C 140 140, 60 140, 30 100 Z" stroke="currentColor" strokeWidth="1" />
+        <path d="M50 100 C 70 80, 130 80, 150 100 C 130 120, 70 120, 50 100 Z" stroke="currentColor" strokeWidth="1" />
+      </svg>
+      <svg
+        className="pointer-events-none absolute -bottom-24 -left-24 h-96 w-96 text-white/5"
+        viewBox="0 0 200 200"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path d="M10 100 C 50 40, 150 40, 190 100 C 150 160, 50 160, 10 100 Z" stroke="currentColor" strokeWidth="1" />
+        <path d="M30 100 C 60 60, 140 60, 170 100 C 140 140, 60 140, 30 100 Z" stroke="currentColor" strokeWidth="1" />
+      </svg>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">New Password</label>
-            <input
-              required
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
+      <div className="relative w-full max-w-sm">
+        {/* Card container with anchor positioning */}
+        <div className="relative mt-14 rounded-2xl border border-white/10 bg-white/5 p-8 pt-16 text-center shadow-2xl shadow-black/40 backdrop-blur">
+          {/* Perfectly centered floating circular logo badge */}
+          <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 overflow-hidden rounded-full border-2 border-white/10 bg-white p-2 shadow-xl">
+            <img
+              src={logo}
+              alt="Wise Beginning logo"
+              className="h-full w-full rounded-full object-cover"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Confirm Password</label>
-            <input
-              required
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
-            />
-          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-rose-400">
+            Staff Portal
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold text-white">Set a New Password</h1>
+          <p className="mt-1 text-sm text-slate-300">
+            For your security, please choose a new password before continuing.
+          </p>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-left" noValidate>
+            <div>
+              <label htmlFor="newPassword" className="block text-sm font-medium text-slate-200">
+                New Password
+              </label>
+              <input
+                id="newPassword"
+                name="newPassword"
+                required
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-lg bg-gray-900 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-          >
-            {submitting ? 'Saving...' : 'Save & Continue'}
-          </button>
-        </form>
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-200">
+                Confirm Password
+              </label>
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                required
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+              />
+            </div>
+
+            {error && (
+              <p role="alert" className="text-sm text-rose-300">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-lg bg-rose-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? 'Saving…' : 'Save & Continue'}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   )
