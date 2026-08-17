@@ -95,9 +95,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setSession(newSession)
       if (newSession) {
-        void loadProfile(newSession.user.id)
+        setLoading(true)
+        loadProfile(newSession.user.id).finally(() => {
+          if (isMounted) setLoading(false)
+        })
       } else {
         setProfile(null)
+        setLoading(false)
       }
     })
 

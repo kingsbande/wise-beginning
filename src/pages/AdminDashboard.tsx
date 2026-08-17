@@ -574,48 +574,48 @@ export function AdminDashboard() {
 
               {/* Quick actions */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex-shrink-0">
                     <h3 className="text-lg font-semibold text-slate-900">Quick actions</h3>
-                    <p className="text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-slate-500">
                       Jump straight into registration or review the student list.
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-3">
                     <button
                       onClick={() => setActiveView('register')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
                     >
-                      <UserPlus className="h-4 w-4" />
-                      Register student
+                      <UserPlus className="h-4 w-4 flex-shrink-0" />
+                      <span>Register student</span>
                     </button>
                     <button
                       onClick={() => setActiveView('students')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
                     >
-                      <BookOpen className="h-4 w-4 text-slate-600" />
-                      View records
+                      <BookOpen className="h-4 w-4 flex-shrink-0 text-slate-600" />
+                      <span>View records</span>
                     </button>
                     <button
                       onClick={() => setActiveView('parents')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
                     >
-                      <Users className="h-4 w-4 text-slate-600" />
-                      Manage parents
+                      <Users className="h-4 w-4 flex-shrink-0 text-slate-600" />
+                      <span>Manage parents</span>
                     </button>
                     <button
                       onClick={() => setActiveView('grades')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
                     >
-                      <BarChart3 className="h-4 w-4 text-slate-600" />
-                      View grades
+                      <BarChart3 className="h-4 w-4 flex-shrink-0 text-slate-600" />
+                      <span>View grades</span>
                     </button>
                     <button
                       onClick={() => setActiveView('staff')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
                     >
-                      <UserCog className="h-4 w-4 text-slate-600" />
-                      Manage staff
+                      <UserCog className="h-4 w-4 flex-shrink-0 text-slate-600" />
+                      <span>Manage staff</span>
                     </button>
                   </div>
                 </div>
