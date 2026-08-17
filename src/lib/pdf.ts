@@ -158,7 +158,6 @@ export async function generateRegistrationConfirmationPdf(params: {
         
         // Wrap content with indentation
         const wrappedLines = doc.splitTextToSize(content, 160) // narrower width to accommodate indent
-        let isFirstLine = true
         for (const wrappedLine of wrappedLines) {
           if (y > 280) {
             doc.addPage()
@@ -168,7 +167,6 @@ export async function generateRegistrationConfirmationPdf(params: {
           const indentX = 28
           doc.text(wrappedLine, indentX, y)
           y += 5.5
-          isFirstLine = false
         }
         y += 1.5 // Extra spacing between list items
       } else {

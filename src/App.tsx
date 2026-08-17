@@ -34,7 +34,7 @@ const TeacherDashboard = lazy(() =>
 )
 const Staff = lazy(() => import('./pages/Staff').then((m) => ({ default: m.Staff })))
 const ForceChangePasswordStaff = lazy(() =>
-  import('./pages/staff/ForceChangePasswordStaff').then((m) => ({
+  import('./pages/Staff/ForceChangePasswordStaff').then((m) => ({
     default: m.ForceChangePasswordStaff,
   })),
 )
