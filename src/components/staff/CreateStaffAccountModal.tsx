@@ -81,7 +81,7 @@ export function CreateStaffAccountModal({ onClose, onCreated }: CreateStaffAccou
                   autoFocus
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Deliwe Makata"
+                  placeholder="e.g. Yona yiwombe"
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
                 />
                 <p className="mt-1 text-xs text-gray-400">
