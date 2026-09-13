@@ -177,7 +177,7 @@ export function ViewGradesTab() {
           <p className="text-sm text-gray-500">Loading...</p>
         ) : viewGridQuery.data?.subjects.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No subjects are assigned to this class yet — add some under the Setup tab.
+            No subjects are assigned to this class yet — add some under the School Setup tab in Settings.
           </p>
         ) : viewGridQuery.data?.rows.length === 0 ? (
           <p className="text-sm text-gray-500">No students in this class yet.</p>

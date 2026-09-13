@@ -5,6 +5,7 @@ import logo from '../assets/logo.png'
 import { LoadingScreen } from '../components/LoadingScreen'
 import { InstallButton } from '../components/InstallButton'
 import { IosInstallHint } from '../components/IosInstallHint'
+import { Eye, EyeOff } from 'lucide-react'
 
 // Parents and staff both sign in with just a username (no "@") —
 // each maps to a synthetic address created for them under the hood
@@ -80,6 +81,7 @@ export function Login() {
   const navigate = useNavigate()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -196,12 +198,12 @@ export function Login() {
           <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 overflow-hidden rounded-full border-2 border-white/10 bg-white p-0 shadow-xl">
             <img
               src={logo}
-              alt="Wise Beginning logo"
+              alt="Wise Beginning Pvt School logo"
               className="h-full w-full rounded-full object-cover"
             />
           </div>
 
-          <h1 className="mt-1 text-2xl font-semibold text-white">Wise Beginning</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-white">Wise Beginning Pvt School</h1>
           <p className="mt-1 text-sm text-slate-300">Sign in to continue.</p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-left" noValidate>
@@ -215,9 +217,11 @@ export function Login() {
                 type="text"
                 autoComplete="username"
                 required
+                aria-invalid={error ? 'true' : undefined}
+                aria-describedby={error ? 'login-error' : undefined}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+                className="mt-1 min-h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
                 placeholder="admin@school.mw or your username"
               />
             </div>
@@ -226,21 +230,34 @@ export function Login() {
               <label htmlFor="password" className="block text-sm font-medium text-slate-200">
                 Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
-                placeholder="••••••••"
-              />
+              <div className="relative mt-1">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  aria-invalid={error ? 'true' : undefined}
+                  aria-describedby={error ? 'login-error' : undefined}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="min-h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 pr-11 text-sm text-white placeholder:text-slate-500 focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-slate-400 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-400/60"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             {error && (
-              <p role="alert" className="text-sm text-rose-300">
+              <p id="login-error" role="alert" className="rounded-lg border border-rose-300/30 bg-rose-950/30 px-3 py-2 text-sm leading-5 text-rose-200">
                 {error}
               </p>
             )}
@@ -248,7 +265,7 @@ export function Login() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-lg bg-rose-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 w-full rounded-lg bg-rose-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>

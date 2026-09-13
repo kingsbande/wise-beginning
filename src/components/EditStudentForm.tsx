@@ -2,6 +2,8 @@ import { ChangeEvent, FormEvent, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { uploadStudentPhoto } from '../lib/cloudinary'
 import { ClassRoom, Student } from '../types'
+import { getUserFriendlyError } from '../lib/errorMessages'
+import { logError } from '../lib/errorLogger'
 
 interface EditStudentFormProps {
   student: Student
@@ -58,7 +60,8 @@ export function EditStudentForm({ student, classes, onSaved, onCancel }: EditStu
       } catch (uploadErr) {
         setUploadingPhoto(false)
         setSaving(false)
-        setError(uploadErr instanceof Error ? uploadErr.message : 'Photo upload failed.')
+        void logError(uploadErr, { type: 'student_photo_upload' })
+        setError(getUserFriendlyError(uploadErr, 'The student photo could not be uploaded. Please try again.'))
         return
       }
       setUploadingPhoto(false)
@@ -76,7 +79,8 @@ export function EditStudentForm({ student, classes, onSaved, onCancel }: EditStu
     setSaving(false)
 
     if (updateError) {
-      setError(updateError.message)
+      void logError(updateError, { type: 'student_update' })
+      setError(getUserFriendlyError(updateError, 'We could not save the student changes. Please try again.'))
       return
     }
 

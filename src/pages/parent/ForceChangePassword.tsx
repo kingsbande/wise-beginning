@@ -88,7 +88,7 @@ export function ForceChangePassword() {
           <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 overflow-hidden rounded-full border-2 border-white/10 bg-white p-2 shadow-xl">
             <img
               src={logo}
-              alt="Wise Beginning logo"
+              alt="Wise Beginning Pvt School logo"
               className="h-full w-full rounded-full object-cover"
             />
           </div>

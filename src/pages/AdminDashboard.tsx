@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Activity,
   BarChart3,
   Bell,
   BookOpen,
+  CalendarCheck,
   ChevronDown,
+  ClipboardList,
+  LibraryBig,
+  Clock,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -13,6 +18,7 @@ import {
   UserCog,
   UserPlus,
   Users,
+  Wallet,
   X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -22,6 +28,12 @@ import { StudentList } from '../components/StudentList'
 import { Grades } from '../pages/Grades'
 import { SettingsPage } from '../pages/Settings'
 import { Staff } from '../pages/Staff'
+import { Attendance } from '../pages/Attendance'
+import { Fees } from '../pages/Fees'
+import { Analytics } from '../pages/Analytics'
+import { AdminReviewsView } from '../components/admin/AdminReviewsView'
+import { CurriculumProgressView } from '../components/admin/CurriculumProgressView'
+import { GlobalSearch } from '../components/GlobalSearch'
 import { supabase } from '../lib/supabaseClient'
 import logo from '../assets/logo.png'
 
@@ -32,7 +44,7 @@ interface DashboardStats {
   totalStaff: number
 }
 
-type View = 'overview' | 'register' | 'students' | 'parents' | 'grades' | 'staff' | 'settings'
+type View = 'overview' | 'register' | 'students' | 'parents' | 'grades' | 'staff' | 'attendance' | 'curriculum' | 'fees' | 'analytics' | 'reviews' | 'settings'
 
 const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -41,8 +53,18 @@ const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'parents', label: 'Parent Accounts', icon: Users },
   { id: 'grades', label: 'Grades', icon: BarChart3 },
   { id: 'staff', label: 'Staff', icon: UserCog },
+  { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
+  { id: 'reviews', label: 'Weekly Reviews', icon: ClipboardList },
+  { id: 'curriculum', label: 'Curriculum Progress', icon: LibraryBig },
+  { id: 'fees', label: 'Fees', icon: Wallet },
+  { id: 'analytics', label: 'Analytics', icon: Activity },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ]
+
+// Views that live only in the drawer/sidebar on mobile. When one of these is
+// active, the "More" tab in the bottom bar highlights so users can tell where
+// they are.
+const MOBILE_MORE_VIEWS: View[] = ['parents', 'staff', 'attendance', 'reviews', 'curriculum', 'fees', 'analytics', 'settings']
 
 function getInitials(name?: string | null) {
   if (!name) return 'A'
@@ -54,7 +76,10 @@ function getInitials(name?: string | null) {
 export function AdminDashboard() {
   const { profile, signOut } = useAuth()
   const [refreshKey, setRefreshKey] = useState(0)
-  const [activeView, setActiveView] = useState<View>('overview')
+  const [activeView, setActiveView] = useState<View>(() => {
+    const saved = sessionStorage.getItem('adminDashboardView') as View | null
+    return saved && NAV_ITEMS.some((item) => item.id === saved) ? saved : 'overview'
+  })
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
@@ -65,6 +90,13 @@ export function AdminDashboard() {
     femaleStudents: 0,
     totalStaff: 0,
   })
+  const [studentSearchSeed, setStudentSearchSeed] = useState('')
+  const [parentSearchSeed, setParentSearchSeed] = useState('')
+  const [staffSearchSeed, setStaffSearchSeed] = useState('')
+
+  useEffect(() => {
+    sessionStorage.setItem('adminDashboardView', activeView)
+  }, [activeView])
 
   // Close the profile dropdown when clicking outside of it
   useEffect(() => {
@@ -143,6 +175,7 @@ export function AdminDashboard() {
   }, [stats])
 
   const initials = getInitials(profile?.full_name)
+  const isMoreMenuActive = MOBILE_MORE_VIEWS.includes(activeView)
 
   const timeGreeting = useMemo(() => {
     const hour = new Date().getHours()
@@ -151,9 +184,31 @@ export function AdminDashboard() {
     return 'Good evening'
   }, [])
 
+  const formattedDate = useMemo(() => {
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date())
+  }, [])
+
   function handleNavSelect(id: View) {
     setActiveView(id)
     setIsMobileMenuOpen(false)
+  }
+
+  function handleSelectStudent(name: string) {
+    setStudentSearchSeed(name)
+    setActiveView('students')
+  }
+  function handleSelectParent(name: string) {
+    setParentSearchSeed(name)
+    setActiveView('parents')
+  }
+  function handleSelectStaff(name: string) {
+    setStaffSearchSeed(name)
+    setActiveView('staff')
   }
 
   return (
@@ -202,6 +257,16 @@ export function AdminDashboard() {
                 Admin Portal
               </p>
             </div>
+          </div>
+
+          {/* NEW — hidden on the smallest screens, shown from sm up so it
+              doesn't fight for space with the mobile menu button */}
+          <div className="hidden flex-1 justify-center sm:flex">
+            <GlobalSearch
+              onSelectStudent={handleSelectStudent}
+              onSelectParent={handleSelectParent}
+              onSelectStaff={handleSelectStaff}
+            />
           </div>
 
           {/* Right cluster stays on one line; below `sm` it collapses down to just the avatar */}
@@ -263,9 +328,8 @@ export function AdminDashboard() {
                   </div>
                 )}
                 <ChevronDown
-                  className={`h-4 w-4 text-slate-300 transition-transform ${
-                    isProfileMenuOpen ? 'rotate-180' : ''
-                  }`}
+                  className={`h-4 w-4 text-slate-300 transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''
+                    }`}
                 />
               </button>
 
@@ -329,23 +393,20 @@ export function AdminDashboard() {
         {/* Sidebar: fixed off-canvas drawer on mobile, static sticky + collapsible on desktop */}
         <aside
           id="admin-sidebar"
-          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] overflow-y-auto rounded-none border-r border-slate-200 bg-white p-3 shadow-2xl transition-transform duration-300 ease-in-out sm:p-4 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:z-auto lg:max-w-none lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
-            isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-          } ${isSidebarCollapsed ? 'lg:w-24' : 'lg:w-72'}`}
+          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] overflow-y-auto rounded-none border-r border-slate-200 bg-white p-3 shadow-2xl transition-transform duration-300 ease-in-out sm:p-4 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:z-auto lg:max-w-none lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+            } ${isSidebarCollapsed ? 'lg:w-24' : 'lg:w-72'}`}
         >
           <div className="flex items-center justify-between lg:justify-start lg:gap-3 px-2 pb-3 sm:pb-4">
             <div className="flex items-center gap-3">
               <p
-                className={`text-xs font-semibold uppercase tracking-[0.15em] text-slate-400 ${
-                  isSidebarCollapsed ? 'lg:hidden' : ''
-                }`}
+                className={`text-xs font-semibold uppercase tracking-[0.15em] text-slate-400 ${isSidebarCollapsed ? 'lg:hidden' : ''
+                  }`}
               >
                 Menu
               </p>
               <span
-                className={`text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 ${
-                  isSidebarCollapsed ? 'lg:hidden' : ''
-                }`}
+                className={`text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 ${isSidebarCollapsed ? 'lg:hidden' : ''
+                  }`}
               >
                 Quick links
               </span>
@@ -362,6 +423,18 @@ export function AdminDashboard() {
             </button>
           </div>
 
+          {/* Global search lives in the drawer on phones (the header version is
+              hidden below `sm`), so jumping to any record is one tap away from
+              every mobile view instead of impossible. */}
+          <div className="mb-2 px-1 lg:hidden">
+            <GlobalSearch
+              theme="light"
+              onSelectStudent={handleSelectStudent}
+              onSelectParent={handleSelectParent}
+              onSelectStaff={handleSelectStaff}
+            />
+          </div>
+
           <nav className="flex flex-col gap-1">
             {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
               const isActive = activeView === id
@@ -371,18 +444,15 @@ export function AdminDashboard() {
                   onClick={() => handleNavSelect(id)}
                   aria-current={isActive ? 'page' : undefined}
                   title={label}
-                  className={`group relative flex min-h-11 items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 ${
-                    isSidebarCollapsed ? 'lg:justify-center lg:px-2 lg:py-3' : 'lg:justify-start'
-                  } ${
-                    isActive
+                  className={`group relative flex min-h-11 items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 ${isSidebarCollapsed ? 'lg:justify-center lg:px-2 lg:py-3' : 'lg:justify-start'
+                    } ${isActive
                       ? 'bg-rose-50 text-rose-700'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   <span
-                    className={`absolute bottom-1.5 left-0 top-1.5 w-1 rounded-full transition ${
-                      isActive ? 'bg-rose-600' : 'bg-transparent'
-                    }`}
+                    className={`absolute bottom-1.5 left-0 top-1.5 w-1 rounded-full transition ${isActive ? 'bg-rose-600' : 'bg-transparent'
+                      }`}
                   />
                   <span className="flex h-4 w-4 shrink-0 items-center justify-center self-center">
                     <Icon
@@ -428,9 +498,15 @@ export function AdminDashboard() {
                   />
                 </svg>
 
-                <p className="text-sm font-medium uppercase tracking-[0.2em] text-rose-300">
-                  {timeGreeting}
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-300">
+                    {timeGreeting}
+                  </p>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200 backdrop-blur-sm border border-white/10">
+                    <Clock className="h-3.5 w-3.5 text-rose-300" />
+                    {formattedDate}
+                  </span>
+                </div>
                 <h2 className="mt-2 text-xl font-semibold sm:text-2xl">{profile?.full_name ?? 'Admin'}</h2>
                 <p className="relative mt-2 max-w-xl text-sm text-slate-300 sm:text-base">
                   Manage registrations, review student records, and keep your school data up to
@@ -574,108 +650,154 @@ export function AdminDashboard() {
 
               {/* Quick actions */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex-shrink-0">
-                    <h3 className="text-lg font-semibold text-slate-900">Quick actions</h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Jump straight into registration or review the student list.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-3">
-                    <button
-                      onClick={() => setActiveView('register')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
-                    >
+                <div className="mb-3.5 sm:mb-4">
+                  <h3 className="text-base font-semibold text-slate-900 sm:text-lg">Quick actions</h3>
+                  <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
+                    Jump directly into daily school workflows.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6 sm:gap-3">
+                  {/* 1. Register Student */}
+                  <button
+                    onClick={() => setActiveView('register')}
+                    className="group flex flex-col items-start justify-between rounded-xl border border-rose-100 bg-rose-50/60 p-3.5 text-left transition-all hover:border-rose-200 hover:bg-rose-50 hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-700 transition-transform group-hover:scale-105">
                       <UserPlus className="h-4 w-4 flex-shrink-0" />
-                      <span>Register student</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveView('students')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
-                    >
-                      <BookOpen className="h-4 w-4 flex-shrink-0 text-slate-600" />
-                      <span>View records</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveView('parents')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
-                    >
-                      <Users className="h-4 w-4 flex-shrink-0 text-slate-600" />
-                      <span>Manage parents</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveView('grades')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
-                    >
-                      <BarChart3 className="h-4 w-4 flex-shrink-0 text-slate-600" />
-                      <span>View grades</span>
-                    </button>
-                    <button
-                      onClick={() => setActiveView('staff')}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 whitespace-nowrap"
-                    >
-                      <UserCog className="h-4 w-4 flex-shrink-0 text-slate-600" />
-                      <span>Manage staff</span>
-                    </button>
-                  </div>
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-slate-900 sm:text-sm">Register</p>
+                      <p className="text-[11px] text-slate-500">New student</p>
+                    </div>
+                  </button>
+
+                  {/* 2. Student Records */}
+                  <button
+                    onClick={() => setActiveView('students')}
+                    className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-700 transition-transform group-hover:scale-105">
+                      <BookOpen className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-slate-900 sm:text-sm">Records</p>
+                      <p className="text-[11px] text-slate-500">All students</p>
+                    </div>
+                  </button>
+
+                  {/* 3. Parent Accounts */}
+                  <button
+                    onClick={() => setActiveView('parents')}
+                    className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-700 transition-transform group-hover:scale-105">
+                      <Users className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-slate-900 sm:text-sm">Parents</p>
+                      <p className="text-[11px] text-slate-500">Accounts</p>
+                    </div>
+                  </button>
+
+                  {/* 4. Grades */}
+                  <button
+                    onClick={() => setActiveView('grades')}
+                    className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 transition-transform group-hover:scale-105">
+                      <BarChart3 className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-slate-900 sm:text-sm">Grades</p>
+                      <p className="text-[11px] text-slate-500">Reports</p>
+                    </div>
+                  </button>
+
+                  {/* 5. Staff */}
+                  <button
+                    onClick={() => setActiveView('staff')}
+                    className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700 transition-transform group-hover:scale-105">
+                      <UserCog className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-slate-900 sm:text-sm">Staff</p>
+                      <p className="text-[11px] text-slate-500">Directory</p>
+                    </div>
+                  </button>
+
+                  {/* 6. Attendance */}
+                  <button
+                    onClick={() => setActiveView('attendance')}
+                    className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 text-sky-700 transition-transform group-hover:scale-105">
+                      <CalendarCheck className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-slate-900 sm:text-sm">Attendance</p>
+                      <p className="text-[11px] text-slate-500">Daily records</p>
+                    </div>
+                  </button>
+
+                  {/* 7. Manage Fees */}
+                  <button
+                    onClick={() => setActiveView('fees')}
+                    className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-100 text-teal-700 transition-transform group-hover:scale-105">
+                      <Wallet className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-slate-900 sm:text-sm">Manage fees</p>
+                      <p className="text-[11px] text-slate-500">Payment setup</p>
+                    </div>
+                  </button>
                 </div>
               </div>
             </>
           )}
-          {/* Mobile bottom tab bar */}
-          <nav className="fixed bottom-3 left-1/2 z-50 w-[min(640px,96%)] -translate-x-1/2 rounded-2xl bg-white/95 px-3 py-2 shadow-lg lg:hidden">
-            <div className="flex items-center justify-between">
+
+          {/* Mobile bottom tab bar — 4 primary views + "More" so every one of
+              the 12 admin views is reachable from the thumb zone. "More" opens
+              the drawer, which now also contains global search. */}
+          <nav className="fixed bottom-3 left-1/2 z-50 flex w-[min(640px,96%)] -translate-x-1/2 items-center justify-between rounded-2xl border border-slate-200/80 bg-white/95 px-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] pt-1.5 shadow-xl backdrop-blur-md lg:hidden">
+            {(
+              [
+                { id: 'overview', label: 'Home', icon: LayoutDashboard },
+                { id: 'register', label: 'Register', icon: UserPlus },
+                { id: 'students', label: 'Students', icon: BookOpen },
+                { id: 'grades', label: 'Grades', icon: BarChart3 },
+              ] as const
+            ).map(({ id, label, icon: Icon }) => (
               <button
-                onClick={() => handleNavSelect('overview')}
-                aria-current={activeView === 'overview' ? 'page' : undefined}
-                className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs ${
-                  activeView === 'overview' ? 'text-rose-600' : 'text-slate-600'
+                key={id}
+                type="button"
+                onClick={() => handleNavSelect(id)}
+                aria-current={activeView === id ? 'page' : undefined}
+                className={`flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-medium transition active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 ${
+                  activeView === id ? 'text-rose-600' : 'text-slate-600'
                 }`}
               >
-                <LayoutDashboard className="h-5 w-5" />
-                <span>Home</span>
+                <Icon className="h-5 w-5" aria-hidden="true" />
+                <span>{label}</span>
               </button>
-              <button
-                onClick={() => handleNavSelect('register')}
-                aria-current={activeView === 'register' ? 'page' : undefined}
-                className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs ${
-                  activeView === 'register' ? 'text-rose-600' : 'text-slate-600'
-                }`}
-              >
-                <UserPlus className="h-5 w-5" />
-                <span>Register</span>
-              </button>
-              <button
-                onClick={() => handleNavSelect('students')}
-                aria-current={activeView === 'students' ? 'page' : undefined}
-                className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs ${
-                  activeView === 'students' ? 'text-rose-600' : 'text-slate-600'
-                }`}
-              >
-                <BookOpen className="h-5 w-5" />
-                <span>Students</span>
-              </button>
-              <button
-                onClick={() => handleNavSelect('grades')}
-                aria-current={activeView === 'grades' ? 'page' : undefined}
-                className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs ${
-                  activeView === 'grades' ? 'text-rose-600' : 'text-slate-600'
-                }`}
-              >
-                <BarChart3 className="h-5 w-5" />
-                <span>Grades</span>
-              </button>
-              <button
-                onClick={() => handleNavSelect('staff')}
-                aria-current={activeView === 'staff' ? 'page' : undefined}
-                className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs ${
-                  activeView === 'staff' ? 'text-rose-600' : 'text-slate-600'
-                }`}
-              >
-                <UserCog className="h-5 w-5" />
-                <span>Staff</span>
-              </button>
-            </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(true)}
+              aria-haspopup="menu"
+              aria-label="More menu options"
+              aria-current={isMoreMenuActive ? 'page' : undefined}
+              className={`flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-medium transition active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 ${
+                isMoreMenuActive ? 'text-rose-600' : 'text-slate-600'
+              }`}
+            >
+              <Menu className="h-5 w-5" aria-hidden="true" />
+              <span>More</span>
+            </button>
           </nav>
 
           {activeView === 'register' && (
@@ -684,13 +806,23 @@ export function AdminDashboard() {
             </div>
           )}
 
-          {activeView === 'students' && <StudentList />}
+          {activeView === 'students' && <StudentList initialSearch={studentSearchSeed} />}
 
-          {activeView === 'parents' && <ParentAccounts />}
+          {activeView === 'parents' && <ParentAccounts initialSearch={parentSearchSeed} />}
 
           {activeView === 'grades' && <Grades />}
 
-          {activeView === 'staff' && <Staff />}
+          {activeView === 'staff' && <Staff initialSearch={staffSearchSeed} />}
+
+          {activeView === 'attendance' && <Attendance />}
+
+          {activeView === 'reviews' && <AdminReviewsView />}
+
+          {activeView === 'curriculum' && <CurriculumProgressView />}
+
+          {activeView === 'fees' && <Fees />}
+
+          {activeView === 'analytics' && <Analytics />}
 
           {activeView === 'settings' && <SettingsPage />}
         </section>

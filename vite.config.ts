@@ -12,11 +12,13 @@ export default defineConfig({
       additionalLegacyPolyfills: ['regenerator-runtime/runtime']
     }),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Keep the app stable while users switch tabs/apps. We only prompt for updates
+      // instead of auto-reloading the entire SPA when the SW detects a new build.
+      registerType: 'prompt',
       injectRegister: 'inline',
       manifest: {
-        name: "Wise Beginning",
-        short_name: 'Wise Beginning',
+        name: "April's Academy",
+        short_name: "April's Academy",
         description: 'Student registration and parent dashboard',
         icons: [
           {
@@ -45,6 +47,8 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
+        skipWaiting: false,
+        clientsClaim: false,
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
         runtimeCaching: [
           {

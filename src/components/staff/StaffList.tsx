@@ -12,6 +12,7 @@ import {
   fetchTeacherCertifications,
   fetchTeacherDetails,
   removeTeacherAssignment,
+  toggleStaffAccountStatus,
   upsertTeacherDetails,
 } from '../../lib/staff/staffApi'
 import { TeacherDetails } from '../../types'
@@ -407,64 +408,112 @@ function TeacherDetailPanel({ teacherId }: { teacherId: string }) {
   )
 }
 
-export function StaffList() {
-  const [search, setSearch] = useState('')
+export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
+  const [search, setSearch] = useState(initialSearch ?? '')
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data: staff = [], isLoading } = useQuery({ queryKey: ['staff-list'], queryFn: fetchStaffList })
 
+  const statusMutation = useMutation({
+    mutationFn: ({ staffId, activate }: { staffId: string; activate: boolean }) => toggleStaffAccountStatus(staffId, activate),
+    onSuccess: () => {
+      setActionError(null)
+      queryClient.invalidateQueries({ queryKey: ['staff-list'] })
+    },
+    onError: (error) => setActionError(error instanceof Error ? error.message : 'Could not update staff account status.'),
+  })
+
   const filtered = staff.filter((s) => {
+    if (statusFilter !== 'all' && (statusFilter === 'active') !== s.is_active) return false
+
     const q = search.trim().toLowerCase()
     if (q === '') return true
     return s.full_name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q)
   })
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Teachers & Staff</h2>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <SearchBar value={search} onChange={setSearch} placeholder="Search by name or role..." />
+    <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
+      <div className="mb-5 flex flex-col gap-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Teachers & Staff</h2>
+            <p className="text-xs text-gray-500">Manage staff access and professional details.</p>
+          </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 sm:w-auto"
           >
             Create Staff Account
           </button>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <SearchBar value={search} onChange={setSearch} placeholder="Search by name or role..." />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as 'active' | 'inactive' | 'all')}
+            aria-label="Filter staff accounts by status"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-gray-900 focus:outline-none sm:w-auto"
+          >
+            <option value="active">Active accounts</option>
+            <option value="inactive">Inactive accounts</option>
+            <option value="all">All accounts</option>
+          </select>
         </div>
       </div>
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading staff...</p>
       ) : filtered.length === 0 ? (
-        <p className="text-sm text-gray-500">No staff accounts yet.</p>
+        <p className="text-sm text-gray-500">
+          No {statusFilter === 'all' ? '' : statusFilter} staff accounts found.
+        </p>
       ) : (
         <div className="space-y-2">
           {filtered.map((s) => (
             <div key={s.id} className="rounded-lg border border-gray-100">
-              <button
-                onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left"
-              >
-                <div className="flex items-center gap-3">
-                  {s.avatar_url ? (
-                    <img src={s.avatar_url} alt={s.full_name} className="h-8 w-8 rounded-full object-cover" />
-                  ) : (
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">
-                      {s.full_name.charAt(0).toUpperCase()}
+              <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4">
+                <button
+                  onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left sm:items-center"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    {s.avatar_url ? (
+                      <img src={s.avatar_url} alt={s.full_name} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">
+                        {s.full_name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-gray-900">{s.full_name}</p>
+                      <p className="truncate text-xs capitalize text-gray-500">{s.role} · {s.is_active ? 'Active' : 'Inactive'}</p>
                     </div>
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{s.full_name}</p>
-                    <p className="text-xs capitalize text-gray-500">{s.role}</p>
                   </div>
+                  <span className="shrink-0 text-xs font-medium text-gray-500 underline">
+                    {expandedId === s.id ? 'Hide' : 'View Details'}
+                  </span>
+                </button>
+                <div className="flex w-full items-center justify-between gap-2 border-t border-gray-100 pt-3 sm:w-auto sm:justify-end sm:border-0 sm:pt-0">
+                  <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${s.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {s.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionError(null)
+                      statusMutation.mutate({ staffId: s.id, activate: !s.is_active })
+                    }}
+                    disabled={statusMutation.isPending}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5 sm:py-1.5"
+                  >
+                    {s.is_active ? 'Deactivate' : 'Reactivate'}
+                  </button>
                 </div>
-                <span className="text-xs font-medium text-gray-500 underline">
-                  {expandedId === s.id ? 'Hide' : 'View Details'}
-                </span>
-              </button>
+              </div>
 
               {expandedId === s.id && (
                 <div className="border-t border-gray-100 p-4">
@@ -474,6 +523,12 @@ export function StaffList() {
             </div>
           ))}
         </div>
+      )}
+
+      {actionError && (
+        <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </p>
       )}
 
       {showCreateModal && (

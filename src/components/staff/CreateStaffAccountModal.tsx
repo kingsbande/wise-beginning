@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabaseClient'
+import { getUserFriendlyError } from '../../lib/errorMessages'
 
 interface CreateStaffAccountModalProps {
   onClose: () => void
@@ -21,13 +22,13 @@ export function CreateStaffAccountModal({ onClose, onCreated }: CreateStaffAccou
         body: { full_name: fullName.trim(), role },
       })
       if (error || !data || data.error) {
-        throw new Error(data?.error ?? error?.message ?? 'Could not create staff account.')
+        throw new Error(getUserFriendlyError(data?.error ?? error, 'We could not create the staff account. Please try again.'))
       }
       return data as { username: string; temporary_password: string }
     },
     onSuccess: (data) => {
       setCredentials({ username: data.username, temporaryPassword: data.temporary_password })
-      queryClient.invalidateQueries({ queryKey: ['staff'] })
+      queryClient.invalidateQueries({ queryKey: ['staff-list'] })
       onCreated()
     },
   })
@@ -81,7 +82,7 @@ export function CreateStaffAccountModal({ onClose, onCreated }: CreateStaffAccou
                   autoFocus
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Yona yiwombe"
+                  placeholder="e.g. Deliwe Makata"
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
                 />
                 <p className="mt-1 text-xs text-gray-400">

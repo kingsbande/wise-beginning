@@ -1,9 +1,9 @@
 import { ParentAccountsList } from '../components/ParentAccountsList'
 
-export function ParentAccounts() {
+export function ParentAccounts({ initialSearch }: { initialSearch?: string } = {}) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      <ParentAccountsList />
+      <ParentAccountsList initialSearch={initialSearch} />
     </div>
   )
 }

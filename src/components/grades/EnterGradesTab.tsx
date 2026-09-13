@@ -151,11 +151,11 @@ export function EnterGradesTab() {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2 sm:flex sm:flex-wrap">
         <select
           value={classId}
           onChange={(e) => setClassId(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
+          className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none sm:w-auto"
         >
           <option value="">Select class</option>
           {classes.map((c) => (
@@ -168,7 +168,7 @@ export function EnterGradesTab() {
         <select
           value={termId}
           onChange={(e) => setTermId(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
+          className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none sm:w-auto"
         >
           <option value="">Select term</option>
           {terms.map((t) => (
@@ -183,7 +183,7 @@ export function EnterGradesTab() {
             <select
               value={assessmentType}
               onChange={(e) => setAssessmentType(e.target.value as AssessmentType)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
+              className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none sm:w-auto"
             >
               <option value="midterm">Midterm</option>
               <option value="end_of_term">End of Term</option>
@@ -193,7 +193,7 @@ export function EnterGradesTab() {
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
               disabled={classId === ''}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none disabled:opacity-50"
+              className="min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none disabled:opacity-50 sm:w-auto"
             >
               <option value="">Select subject</option>
               {classSubjects.map((s) => (
@@ -218,33 +218,35 @@ export function EnterGradesTab() {
             <p className="text-sm text-gray-500">No students in this class yet.</p>
           ) : (
             <>
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 text-gray-500">
-                    <th className="py-2 pr-4">Student</th>
-                    <th className="py-2 pr-4">Score (0–100)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {gradeGridQuery.data?.map((row) => (
-                    <tr key={row.student_id} className="border-b border-gray-100">
-                      <td className="py-2 pr-4">{row.full_name}</td>
-                      <td className="py-2 pr-4">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={scoreDrafts[row.student_id] ?? ''}
-                          onChange={(e) =>
-                            setScoreDrafts((prev) => ({ ...prev, [row.student_id]: e.target.value }))
-                          }
-                          className="w-24 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-gray-900 focus:outline-none"
-                        />
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[28rem] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-500">
+                      <th className="py-2 pr-4">Student</th>
+                      <th className="py-2 pr-4">Score (0–100)</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {gradeGridQuery.data?.map((row) => (
+                      <tr key={row.student_id} className="border-b border-gray-100">
+                        <td className="py-2 pr-4">{row.full_name}</td>
+                        <td className="py-2 pr-4">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={scoreDrafts[row.student_id] ?? ''}
+                            onChange={(e) =>
+                              setScoreDrafts((prev) => ({ ...prev, [row.student_id]: e.target.value }))
+                            }
+                            className="w-24 rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-gray-900 focus:outline-none"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
               {scoreOutOfRange && (
                 <p className="mt-2 text-sm text-red-600">Scores must be between 0 and 100.</p>
@@ -271,7 +273,7 @@ export function EnterGradesTab() {
             <p className="text-sm text-gray-500">Choose a class and term to load the progress sheet.</p>
           ) : progressFields.length === 0 ? (
             <p className="text-sm text-gray-500">
-              No progress report fields set up yet — add some under the Setup tab first.
+              No progress report fields set up yet — add some under the School Setup tab in Settings first.
             </p>
           ) : progressGridQuery.isLoading ? (
             <p className="text-sm text-gray-500">Loading students...</p>

@@ -1,13 +1,15 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { fetchClasses, fetchStudentsPage, changeStudentStatus, hardDeleteStudent, PAGE_SIZE } from '../lib/queries'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { Student, StudentStatus } from '../types'
+import { AlertTriangle } from 'lucide-react'
 import { SearchBar } from './SearchBar'
 import { EditStudentForm } from './EditStudentForm'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Pagination } from './Pagination'
+import { QueryState } from './QueryState'
 
 const STATUS_LABELS: Record<StudentStatus, string> = {
   active: 'Active',
@@ -23,12 +25,12 @@ const STATUS_BADGE_STYLES: Record<StudentStatus, string> = {
   transferred: 'bg-slate-100 text-slate-600 border-slate-200',
 }
 
-export function StudentList() {
+export function StudentList({ initialSearch }: { initialSearch?: string } = {}) {
   const queryClient = useQueryClient()
   const { profile } = useAuth()
   const canEditStudents = profile?.role !== 'headteacher'
 
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(initialSearch ?? '')
   const debouncedSearch = useDebouncedValue(search)
   const [selectedClassId, setSelectedClassId] = useState<string>('all')
   const [dateJoinedFilter, setDateJoinedFilter] = useState('')
@@ -36,11 +38,16 @@ export function StudentList() {
   const [page, setPage] = useState(0)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string } | null>(null)
   const [pendingStatusChange, setPendingStatusChange] = useState<{
     student: Student
     newStatus: StudentStatus
   } | null>(null)
   const [pendingHardDelete, setPendingHardDelete] = useState<Student | null>(null)
+  // Two-step guard for the destructive delete affordance: first tap arms it,
+  // second tap (within the same row) opens the confirm dialog. Prevents
+  // accidentally erasing a whole record while tapping near the status list.
+  const [armedDeleteId, setArmedDeleteId] = useState<string | null>(null)
 
   // Shared cache entry — Registration form, Edit form, and this list
   // all read the same ['classes'] query instead of each fetching
@@ -54,7 +61,7 @@ export function StudentList() {
   // useQuery calls, not a waterfall) and only ever pulls the current
   // page's rows — filtering, search, and the total count all happen
   // server-side.
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['students', page, debouncedSearch, selectedClassId, dateJoinedFilter, statusFilter],
     queryFn: () =>
       fetchStudentsPage({
@@ -93,6 +100,17 @@ export function StudentList() {
       setExpandedId(null)
     },
   })
+
+  useEffect(() => {
+    if (!selectedPhoto) return
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setSelectedPhoto(null)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedPhoto])
 
   function resetToFirstPage() {
     setPage(0)
@@ -163,13 +181,17 @@ export function StudentList() {
         </div>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-slate-500">Loading students...</p>
-      ) : students.length === 0 ? (
-        <p className="text-sm text-slate-500">No students found.</p>
-      ) : (
-        <div className={isFetching ? 'opacity-60 transition-opacity' : ''}>
-          <div className="overflow-x-auto">
+      <QueryState
+        isLoading={isLoading}
+        isError={isError}
+        error={error}
+        isFetching={isFetching}
+        onRetry={refetch}
+        empty={students.length === 0}
+        emptyTitle="No students found"
+        emptyHint="Try clearing filters or adjusting your search term."
+      >
+        <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
@@ -193,13 +215,23 @@ export function StudentList() {
                     <tr className="border-b border-slate-100">
                       <td className="py-2 pr-4">
                         {s.photo_url ? (
-                          <img
-                            src={s.photo_url}
-                            alt={s.full_name}
-                            className="h-8 w-8 rounded-full object-cover"
-                          />
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPhoto({ url: s.photo_url!, name: s.full_name })}
+                            className="block rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2"
+                            aria-label={`View larger photo of ${s.full_name}`}
+                            title="View larger photo"
+                          >
+                            <img
+                              src={s.photo_url}
+                              alt={s.full_name}
+                              width={40}
+                              height={40}
+                              className="h-10 w-10 rounded-full border border-slate-200 object-cover object-center"
+                            />
+                          </button>
                         ) : (
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-400">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-400">
                             {s.full_name.charAt(0).toUpperCase()}
                           </div>
                         )}
@@ -311,16 +343,40 @@ export function StudentList() {
 
                           {canEditStudents && (
                             <div className="mt-4 border-t border-slate-200 pt-3">
-                              <p className="text-xs text-slate-400">
+                              <p className="text-xs text-slate-500">
                                 Only use this for a genuine duplicate entry — it permanently erases this
                                 student's grades, progress reports, and notification history. For a
                                 student who has left, use the Status dropdown above instead.
                               </p>
                               <button
-                                onClick={() => setPendingHardDelete(s)}
-                                className="mt-2 text-xs font-medium text-red-700 underline hover:text-red-900"
+                                type="button"
+                                onClick={() => {
+                                  if (armedDeleteId === s.id) {
+                                    setArmedDeleteId(null)
+                                    setPendingHardDelete(s)
+                                  } else {
+                                    setArmedDeleteId(s.id)
+                                  }
+                                }}
+                                aria-label={
+                                  armedDeleteId === s.id
+                                    ? `Confirm permanent deletion for ${s.full_name} — this cannot be undone`
+                                    : `Permanently delete ${s.full_name} (duplicate entry)`
+                                }
+                                className={`mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-1 ${
+                                  armedDeleteId === s.id
+                                    ? 'border-red-600 bg-red-600 text-white shadow-sm hover:bg-red-700'
+                                    : 'border-red-200 bg-red-50 text-red-700 hover:border-red-400 hover:bg-red-100'
+                                }`}
                               >
-                                Permanently Delete (duplicate entry)
+                                {armedDeleteId === s.id ? (
+                                  <>
+                                    <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                                    Tap again to confirm
+                                  </>
+                                ) : (
+                                  'Permanently Delete (duplicate entry)'
+                                )}
                               </button>
                             </div>
                           )}
@@ -334,8 +390,7 @@ export function StudentList() {
           </div>
 
           <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
-        </div>
-      )}
+      </QueryState>
 
       {pendingStatusChange && (
         <ConfirmDialog
@@ -353,9 +408,42 @@ export function StudentList() {
           title="Permanently Delete Student"
           message={`This permanently deletes ${pendingHardDelete.full_name}'s entire record — including all grades, progress reports, and notification history. This cannot be undone. Only proceed if this is a duplicate entry.`}
           confirmLabel={hardDeleteMutation.isPending ? 'Deleting...' : 'Permanently Delete'}
-          onCancel={() => setPendingHardDelete(null)}
-          onConfirm={() => hardDeleteMutation.mutate(pendingHardDelete.id)}
+          onCancel={() => {
+            setPendingHardDelete(null)
+            setArmedDeleteId(null)
+          }}
+          onConfirm={() => {
+            setArmedDeleteId(null)
+            hardDeleteMutation.mutate(pendingHardDelete.id)
+          }}
         />
+      )}
+
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${selectedPhoto.name} profile photo`}
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div className="relative max-h-[90vh] max-w-[min(90vw,42rem)]" onClick={(event) => event.stopPropagation()}>
+            <img
+              src={selectedPhoto.url}
+              alt={selectedPhoto.name}
+              className="max-h-[82vh] max-w-full rounded-xl object-contain shadow-2xl"
+            />
+            <button
+              type="button"
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute -right-2 -top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white text-xl leading-none text-slate-700 shadow-lg hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+              aria-label="Close photo"
+              title="Close photo"
+            >
+              ×
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

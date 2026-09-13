@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { updateOwnPassword, verifyCurrentPassword } from '../../lib/settings/settingsApi'
+import { getUserFriendlyError } from '../../lib/errorMessages'
 
 export function ChangePasswordForm() {
   const { session } = useAuth()
@@ -44,7 +45,7 @@ export function ChangePasswordForm() {
     setSubmitting(false)
 
     if (updateError) {
-      setError(updateError)
+      setError(getUserFriendlyError(updateError, 'We could not update your password. Please try again.'))
       return
     }
 

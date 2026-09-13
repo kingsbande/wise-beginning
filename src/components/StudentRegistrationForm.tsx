@@ -6,6 +6,8 @@ import { fetchClasses } from '../lib/queries'
 import { generateRegistrationConfirmationPdf } from '../lib/pdf'
 import { useAuth } from '../context/AuthContext'
 import { NewStudentInput } from '../types'
+import { getUserFriendlyError } from '../lib/errorMessages'
+import { logError } from '../lib/errorLogger'
 
 const registrationSteps: Array<{ id: 'student' | 'parent' | 'details'; label: string }> = [
   { id: 'student', label: 'Student' },
@@ -19,6 +21,18 @@ function defaultAcademicYear() {
 
 function defaultDateJoined() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function calculateAge(dob: string): number | '' {
+  if (!dob) return ''
+  const birth = new Date(dob)
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  const monthDiff = today.getMonth() - birth.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--
+  }
+  return age >= 0 ? age : ''
 }
 
 const emptyForm: NewStudentInput = {
@@ -110,7 +124,8 @@ export function StudentRegistrationForm({ onRegistered }: StudentRegistrationFor
       } catch (uploadErr) {
         setUploadingPhoto(false)
         setSubmitting(false)
-        setError(uploadErr instanceof Error ? uploadErr.message : 'Photo upload failed.')
+        void logError(uploadErr, { type: 'student_photo_upload' })
+        setError(getUserFriendlyError(uploadErr, 'The student photo could not be uploaded. Please try again.'))
         return
       }
       setUploadingPhoto(false)
@@ -132,7 +147,8 @@ export function StudentRegistrationForm({ onRegistered }: StudentRegistrationFor
 
     if (insertError || !inserted) {
       setSubmitting(false)
-      setError(insertError?.message ?? 'Could not register student.')
+      void logError(insertError, { type: 'student_registration' })
+      setError(getUserFriendlyError(insertError, 'We could not register the student. Please check the details and try again.'))
       return
     }
 
@@ -251,18 +267,24 @@ export function StudentRegistrationForm({ onRegistered }: StudentRegistrationFor
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Date of Birth</label>
-                  <input
-                    type="date"
-                    required
-                    value={form.date_of_birth}
-                    onChange={(e) => updateField('date_of_birth', e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
-                  />
+                    <input
+                      type="date"
+                      required
+                      value={form.date_of_birth}
+                      onChange={(e) => {
+                        const dob = e.target.value
+                        updateField('date_of_birth', dob)
+                        // Also update the derived age field
+                        updateField('age', calculateAge(dob))
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40"
+                    />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Age</label>
                   <input
+                    readOnly
                     type="number"
                     min={0}
                     max={25}

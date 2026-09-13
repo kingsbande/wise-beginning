@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabaseClient'
 import { searchStudentsForPicker } from '../lib/queries'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
+import { getUserFriendlyError } from '../lib/errorMessages'
 
 interface CreateParentAccountModalProps {
   onClose: () => void
@@ -34,7 +35,7 @@ export function CreateParentAccountModal({ onClose, onCreated }: CreateParentAcc
         body: { student_id: studentId },
       })
       if (error || !data || data.error) {
-        throw new Error(data?.error ?? error?.message ?? 'Could not create parent account.')
+        throw new Error(getUserFriendlyError(data?.error ?? error, 'We could not create the parent account. Please try again.'))
       }
       return data as { username: string; temporary_password: string; school_code: string }
     },
@@ -102,7 +103,7 @@ export function CreateParentAccountModal({ onClose, onCreated }: CreateParentAcc
             />
 
             {createMutation.isError && (
-              <p className="mt-2 text-sm text-red-600">{(createMutation.error as Error).message}</p>
+              <p className="mt-2 text-sm text-red-600">{getUserFriendlyError(createMutation.error, 'We could not create the parent account. Please try again.')}</p>
             )}
 
             <div className="mt-3 max-h-80 overflow-y-auto rounded-lg border border-gray-100">

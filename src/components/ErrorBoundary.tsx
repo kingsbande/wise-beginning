@@ -1,4 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react'
+import { getUserFriendlyError } from '../lib/errorMessages'
+import { logError } from '../lib/errorLogger'
 
 interface Props {
   children: ReactNode
@@ -17,7 +19,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('Uncaught error in component tree:', error, info)
+    void logError(error, { type: 'render_error', context: { componentStack: info.componentStack } })
   }
 
   render() {
@@ -27,11 +29,9 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="max-w-2xl rounded-lg border border-red-200 bg-white p-6 shadow">
             <h2 className="mb-2 text-lg font-semibold text-red-700">Something went wrong</h2>
             <p className="mb-4 text-sm text-red-600">An error occurred while rendering this page.</p>
-            <details className="whitespace-pre-wrap text-xs text-slate-700">
-              {this.state.error?.message}
-              {'\n'}
-              {this.state.error?.stack}
-            </details>
+            <p className="text-sm text-slate-600">
+              {getUserFriendlyError(this.state.error, 'Please refresh the page and try again.')}
+            </p>
           </div>
         </div>
       )

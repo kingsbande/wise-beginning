@@ -2,6 +2,8 @@ import { ChangeEvent, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { uploadImage } from '../../lib/cloudinary'
 import { updateOwnAvatar } from '../../lib/settings/settingsApi'
+import { getUserFriendlyError } from '../../lib/errorMessages'
+import { logError } from '../../lib/errorLogger'
 
 function getInitials(name?: string | null) {
   if (!name) return '?'
@@ -31,7 +33,8 @@ export function ProfilePictureForm() {
       await refreshProfile()
       setSuccess(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed.')
+      void logError(err, { type: 'profile_picture_update' })
+      setError(getUserFriendlyError(err, 'The profile picture could not be updated. Please try again.'))
     } finally {
       setUploading(false)
     }

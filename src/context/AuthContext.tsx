@@ -3,6 +3,7 @@ import { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
 import { queryClient } from '../lib/queryClient'
 import { Profile } from '../types'
+import { getUserFriendlyError } from '../lib/errorMessages'
 
 interface AuthContextValue {
   session: Session | null
@@ -24,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, full_name, role, school_id, avatar_url, must_change_password, username, schools ( name, logo_url, registration_terms )',
+        'id, full_name, role, school_id, avatar_url, must_change_password, username, is_active, schools ( name, logo_url, registration_terms )',
       )
       .eq('id', userId)
       .single()
@@ -38,7 +39,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         avatar_url: string | null
         must_change_password: boolean
         username: string | null
+        is_active: boolean
         schools: { name: string; logo_url: string | null; registration_terms: string | null } | null
+      }
+      if (!row.is_active) {
+        await supabase.auth.signOut()
+        setProfile(null)
+        return
       }
       setProfile({
         id: row.id,
@@ -51,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         avatar_url: row.avatar_url,
         must_change_password: row.must_change_password,
         username: row.username,
+        is_active: row.is_active,
       })
     } else {
       setProfile(null)
@@ -113,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error: error ? error.message : null }
+    return { error: error ? getUserFriendlyError(error, 'We could not sign you in. Please check your details and try again.') : null }
   }
 
   async function signOut() {

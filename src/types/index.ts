@@ -13,6 +13,7 @@ export interface Profile {
   avatar_url: string | null // NEW
   must_change_password: boolean
   username: string | null // NEW
+  is_active: boolean
 }
 
 export interface ParentAccount {
@@ -146,10 +147,121 @@ export interface TeacherAssignment {
   subject_name: string
 }
 
+export interface CurriculumTopic {
+  id: string
+  school_id: string
+  teacher_id: string
+  class_id: string
+  subject_id: string
+  term_id: string
+  title: string
+  note: string | null
+  taught_on: string | null
+  completed: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CurriculumTopicProgress {
+  school_id: string
+  term_id: string
+  teacher_id: string
+  teacher_name: string
+  class_id: string
+  class_name: string
+  subject_id: string
+  subject_name: string
+  total_topics: number
+  completed_topics: number
+  completion_rate: number
+}
+
 export interface StaffMember {
   id: string
   full_name: string
   role: 'teacher' | 'headteacher'
   avatar_url: string | null
   created_at: string
+  is_active: boolean
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'half_day' | 'excused'
+
+export interface AttendanceGridRow {
+  student_id: string
+  full_name: string
+  status: AttendanceStatus | null
+}
+
+export interface ClassTeacherAssignment {
+  class_id: string
+  class_name: string
+  teacher_id: string | null
+  teacher_name: string | null
+}
+
+export interface AttendanceSummaryRow {
+  student_id: string
+  full_name: string
+  present: number
+  absent: number
+  late: number
+  half_day: number
+  excused: number
+}
+
+export interface FeeCategory {
+  id: string
+  name: string
+}
+
+export interface FeeStructure {
+  id: string
+  class_id: string
+  class_name: string
+  fee_category_id: string
+  fee_category_name: string
+  term_id: string
+  term_name: string
+  amount: number
+}
+
+export interface FeeCharge {
+  id: string
+  student_id: string
+  fee_category_id: string
+  term_id: string
+  amount_due: number
+}
+
+export interface FeePayment {
+  id: string
+  fee_charge_id: string
+  amount: number
+  payment_date: string
+  method: string | null
+  note: string | null
+  created_at: string
+}
+
+// One row per category+term for a single student — used in the
+// admin "Record Payments" panel and the parent portal Fees tab.
+export interface StudentFeeSummaryRow {
+  fee_charge_id: string
+  category_name: string
+  term_name: string
+  amount_due: number
+  amount_paid: number
+  balance: number
+}
+
+// One row per student — used in the admin "Balances" overview list.
+export interface FeeBalanceRow {
+  student_id: string
+  full_name: string
+  admission_number: string
+  class_name: string
+  total_due: number
+  total_paid: number
+  total_balance: number
 }

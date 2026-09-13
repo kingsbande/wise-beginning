@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { EnterGradesTab } from '../components/grades/EnterGradesTab'
 import { ViewGradesTab } from '../components/grades/ViewGradesTab'
-import { SetupTab } from '../components/grades/SetupTab'
 
-type Tab = 'enter' | 'view' | 'setup'
+type Tab = 'enter' | 'view'
 
 export function Grades() {
   const [tab, setTab] = useState<Tab>('enter')
@@ -11,7 +10,6 @@ export function Grades() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'enter', label: 'Enter Grades' },
     { id: 'view', label: 'View Grades' },
-    { id: 'setup', label: 'Setup' },
   ]
 
   return (
@@ -36,7 +34,6 @@ export function Grades() {
 
       {tab === 'enter' && <EnterGradesTab />}
       {tab === 'view' && <ViewGradesTab />}
-      {tab === 'setup' && <SetupTab />}
     </div>
   )
 }

@@ -8,21 +8,21 @@ import { SearchBar } from './SearchBar'
 import { CreateParentAccountModal } from './CreateParentAccountModal'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Pagination } from './Pagination'
+import { getUserFriendlyError } from '../lib/errorMessages'
 
 async function invokeOrThrow<T>(functionName: string, body: object): Promise<T> {
   const { data, error } = await supabase.functions.invoke(functionName, { body })
   if (error || !data || data.error) {
-    throw new Error(data?.error ?? error?.message ?? `${functionName} failed`)
+    throw new Error(getUserFriendlyError(data?.error ?? error, 'The account action could not be completed.'))
   }
   return data as T
 }
 
-export function ParentAccountsList() {
+export function ParentAccountsList({ initialSearch }: { initialSearch?: string } = {}) {
   const queryClient = useQueryClient()
-
-  const [search, setSearch] = useState('')
-  const debouncedSearch = useDebouncedValue(search)
   const [page, setPage] = useState(0)
+  const [search, setSearch] = useState(initialSearch ?? '')
+  const debouncedSearch = useDebouncedValue(search)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newPassword, setNewPassword] = useState<{ username: string; password: string } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<ParentAccount | null>(null)
@@ -50,7 +50,7 @@ export function ParentAccountsList() {
       setNewPassword({ username: account.username, password: result.temporary_password })
       invalidate()
     },
-    onError: (err: Error) => setActionError(err.message),
+    onError: (err: Error) => setActionError(getUserFriendlyError(err, 'We could not reset the password. Please try again.')),
   })
 
   const toggleStatusMutation = useMutation({
@@ -60,7 +60,7 @@ export function ParentAccountsList() {
         activate: !account.is_active,
       }),
     onSuccess: invalidate,
-    onError: (err: Error) => setActionError(err.message),
+    onError: (err: Error) => setActionError(getUserFriendlyError(err, 'We could not update the account status. Please try again.')),
   })
 
   const deleteMutation = useMutation({
@@ -70,7 +70,7 @@ export function ParentAccountsList() {
       invalidate()
       setPendingDelete(null)
     },
-    onError: (err: Error) => setActionError(err.message),
+    onError: (err: Error) => setActionError(getUserFriendlyError(err, 'We could not delete the account. Please try again.')),
   })
 
   return (

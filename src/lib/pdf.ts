@@ -190,6 +190,67 @@ export async function generateRegistrationConfirmationPdf(params: {
   doc.save(`${params.studentName.replace(/\s+/g, '_')}_registration_confirmation.pdf`)
 }
 
+export interface PaymentReceiptParams {
+  schoolName: string
+  logoUrl: string | null
+  receiptNumber: string
+  studentName: string
+  admissionNumber: string
+  className: string
+  categoryName: string
+  termName: string
+  amountDue: number
+  amountPaid: number
+  balance: number
+  paymentDate: string
+  method: string | null
+  note: string | null
+}
+
+export async function generatePaymentReceiptPdf(params: PaymentReceiptParams) {
+  const doc = new jsPDF()
+  let y = await drawHeader(doc, {
+    schoolName: params.schoolName,
+    logoUrl: params.logoUrl,
+    subtitle: 'Fee Payment Receipt',
+  })
+
+  doc.setFontSize(10)
+  doc.text(`Receipt No: ${params.receiptNumber}`, 20, y)
+  doc.text(`Payment Date: ${params.paymentDate}`, 120, y)
+  y += 14
+
+  y = drawStudentInfo(doc, y, {
+    studentName: params.studentName,
+    admissionNumber: params.admissionNumber,
+    className: params.className,
+    termName: params.termName,
+    academicYear: '',
+  })
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('Payment Details', 20, y)
+  doc.setFont('helvetica', 'normal')
+  y += 8
+  doc.line(20, y, 190, y)
+  y += 9
+  doc.text(`Fee: ${params.categoryName}`, 20, y)
+  doc.text(`Total Due: ${params.amountDue.toLocaleString()}`, 20, y + 8)
+  doc.text(`Amount Paid: ${params.amountPaid.toLocaleString()}`, 20, y + 16)
+  doc.text(`Balance Remaining: ${params.balance.toLocaleString()}`, 20, y + 24)
+  doc.text(`Payment Method: ${params.method || 'Not specified'}`, 20, y + 32)
+
+  if (params.note) {
+    doc.text(`Note: ${params.note}`, 20, y + 40)
+  }
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Thank you for your payment.', 20, y + (params.note ? 58 : 50))
+  doc.setFont('helvetica', 'normal')
+  doc.save(`${params.studentName.replace(/\s+/g, '_')}_payment_receipt_${params.receiptNumber}.pdf`)
+}
+
 export interface GradeReportRow {
   subject: string
   midterm: number | null
@@ -288,4 +349,137 @@ export async function generateProgressReportPdf(params: {
   doc.save(
     `${params.studentName.replace(/\s+/g, '_')}_${params.termName.replace(/\s+/g, '_')}_progress_report.pdf`,
   )
+}
+
+export interface AttendanceSummaryPdfRow {
+  studentName: string
+  present: number
+  absent: number
+  late: number
+  halfDay: number
+  excused: number
+}
+
+export async function generateAttendanceReportPdf(params: {
+  schoolName: string
+  logoUrl: string | null
+  className: string
+  dateFrom: string
+  dateTo: string
+  rows: AttendanceSummaryPdfRow[]
+}) {
+  const doc = new jsPDF()
+
+  let y = await drawHeader(doc, {
+    schoolName: params.schoolName,
+    logoUrl: params.logoUrl,
+    subtitle: 'Attendance Report',
+  })
+
+  doc.setFontSize(10)
+  doc.text(`Class: ${params.className}`, 20, y)
+  doc.text(`Period: ${params.dateFrom} to ${params.dateTo}`, 120, y)
+  y += 12
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('Student', 20, y)
+  doc.text('Present', 90, y)
+  doc.text('Absent', 115, y)
+  doc.text('Late', 140, y)
+  doc.text('Half-Day', 160, y)
+  doc.text('Excused', 182, y)
+  doc.setFont('helvetica', 'normal')
+  y += 3
+  doc.line(20, y, 200, y)
+  y += 7
+
+  for (const row of params.rows) {
+    doc.text(row.studentName, 20, y)
+    doc.text(String(row.present), 90, y)
+    doc.text(String(row.absent), 115, y)
+    doc.text(String(row.late), 140, y)
+    doc.text(String(row.halfDay), 160, y)
+    doc.text(String(row.excused), 182, y)
+    y += 8
+    if (y > 270) {
+      doc.addPage()
+      y = 20
+    }
+  }
+
+  doc.save(
+    `${params.className.replace(/\s+/g, '_')}_attendance_${params.dateFrom}_to_${params.dateTo}.pdf`,
+  )
+}
+
+export interface FeeStatementRow {
+  categoryName: string
+  termName: string
+  amountDue: number
+  amountPaid: number
+  balance: number
+}
+
+export async function generateFeeStatementPdf(params: {
+  schoolName: string
+  logoUrl: string | null
+  studentName: string
+  admissionNumber: string
+  className: string
+  rows: FeeStatementRow[]
+}) {
+  const doc = new jsPDF()
+
+  let y = await drawHeader(doc, {
+    schoolName: params.schoolName,
+    logoUrl: params.logoUrl,
+    subtitle: 'Fee Statement',
+  })
+
+  doc.setFontSize(10)
+  doc.text(`Student: ${params.studentName}`, 20, y)
+  doc.text(`Admission No: ${params.admissionNumber}`, 120, y)
+  y += 6
+  doc.text(`Class: ${params.className}`, 20, y)
+  y += 12
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('Category', 20, y)
+  doc.text('Term', 75, y)
+  doc.text('Amount Due', 125, y)
+  doc.text('Paid', 155, y)
+  doc.text('Balance', 178, y)
+  doc.setFont('helvetica', 'normal')
+  y += 3
+  doc.line(20, y, 200, y)
+  y += 7
+
+  let totalDue = 0
+  let totalPaid = 0
+
+  for (const row of params.rows) {
+    doc.text(row.categoryName, 20, y)
+    doc.text(row.termName, 75, y)
+    doc.text(row.amountDue.toLocaleString(), 125, y)
+    doc.text(row.amountPaid.toLocaleString(), 155, y)
+    doc.text(row.balance.toLocaleString(), 178, y)
+    totalDue += row.amountDue
+    totalPaid += row.amountPaid
+    y += 8
+    if (y > 260) {
+      doc.addPage()
+      y = 20
+    }
+  }
+
+  y += 4
+  doc.line(20, y, 200, y)
+  y += 8
+  doc.setFont('helvetica', 'bold')
+  doc.text('Total', 20, y)
+  doc.text(totalDue.toLocaleString(), 125, y)
+  doc.text(totalPaid.toLocaleString(), 155, y)
+  doc.text((totalDue - totalPaid).toLocaleString(), 178, y)
+
+  doc.save(`${params.studentName.replace(/\s+/g, '_')}_fee_statement.pdf`)
 }
