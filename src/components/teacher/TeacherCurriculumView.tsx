@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookOpen, Check, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { fetchTerms, createCurriculumTopic, deleteCurriculumTopic, fetchCurriculumTopics, updateCurriculumTopic } from '../../lib/topicsApi'
 import { CurriculumTopic, TeacherAssignment } from '../../types'
 
@@ -16,6 +17,13 @@ export function TeacherCurriculumView({ assignments, teacherId, schoolId }: Teac
   const [assignmentId, setAssignmentId] = useState(assignments[0]?.id ?? '')
   const [newTitle, setNewTitle] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [topicToDelete, setTopicToDelete] = useState<CurriculumTopic | null>(null)
+
+  const handleDeleteConfirmed = () => {
+    if (!topicToDelete) return
+    deleteMutation.mutate(topicToDelete.id)
+    setTopicToDelete(null)
+  }
 
   const { data: terms = [], isLoading: isTermsLoading } = useQuery({
     queryKey: ['terms'],
@@ -72,7 +80,10 @@ export function TeacherCurriculumView({ assignments, teacherId, schoolId }: Teac
   })
   const deleteMutation = useMutation({
     mutationFn: deleteCurriculumTopic,
-    onSuccess: invalidateTopics,
+    onSuccess: () => {
+      invalidateTopics()
+      setTopicToDelete(null)
+    },
   })
 
   const selectedTerm = terms.find((term) => term.id === termId)
@@ -135,10 +146,20 @@ export function TeacherCurriculumView({ assignments, teacherId, schoolId }: Teac
 
           {isTopicsLoading ? <LoadingState label="Loading topics..." /> : isError ? <EmptyState title="Topics could not load" message="Refresh the page and try again." /> : topics.length === 0 ? <EmptyState title="No topics yet" message="Add your first topic above to start tracking this subject." /> : (
             <div className="divide-y divide-slate-100">
-              {topics.map((topic) => <TopicRow key={topic.id} topic={topic} editingId={editingId} setEditingId={setEditingId} onUpdate={(changes) => updateMutation.mutate({ id: topic.id, changes })} onDelete={() => { if (window.confirm('Delete this topic?')) deleteMutation.mutate(topic.id) }} />)}
+              {topics.map((topic) => <TopicRow key={topic.id} topic={topic} editingId={editingId} setEditingId={setEditingId} onUpdate={(changes) => updateMutation.mutate({ id: topic.id, changes })} onDelete={() => setTopicToDelete(topic)} />)}
             </div>
           )}
         </div>
+      )}
+
+      {topicToDelete && (
+        <ConfirmDialog
+          title="Delete topic?"
+          message={`This will permanently remove "${topicToDelete.title}" from ${assignment?.class_name ?? 'this class'} for ${assignment?.subject_name ?? 'this subject'}. This action cannot be undone.`}
+          confirmLabel="Delete topic"
+          onConfirm={handleDeleteConfirmed}
+          onCancel={() => setTopicToDelete(null)}
+        />
       )}
     </div>
   )
