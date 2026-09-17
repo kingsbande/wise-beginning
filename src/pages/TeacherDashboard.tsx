@@ -165,17 +165,17 @@ export function TeacherDashboard() {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
   }, [classTeacherClasses, assignments])
 
-  // Sync attendance selection only with classes where this teacher is the class teacher.
+  // Keep attendance on a class this teacher teaches or manages.
   useEffect(() => {
-    if (classTeacherClasses.length === 0) {
+    if (distinctClasses.length === 0) {
       setAttendanceClassId('')
       return
     }
 
-    if (!classTeacherClasses.some((c) => c.id === attendanceClassId)) {
-      setAttendanceClassId(classTeacherClasses[0].id)
+    if (!distinctClasses.some((c) => c.id === attendanceClassId)) {
+      setAttendanceClassId(distinctClasses[0].id)
     }
-  }, [classTeacherClasses, attendanceClassId])
+  }, [distinctClasses, attendanceClassId])
 
   // Sync initial class selection for Roster
   useEffect(() => {
@@ -809,7 +809,7 @@ export function TeacherDashboard() {
           {/* ========================================================= */}
           {/* 2. ATTENDANCE VIEW                                        */}
           {/* ========================================================= */}
-          {activeView === 'attendance' && classTeacherClasses.length > 0 && (
+          {activeView === 'attendance' && (
             <div className="space-y-4 sm:space-y-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
@@ -822,7 +822,7 @@ export function TeacherDashboard() {
                     </p>
                   </div>
 
-                  {classTeacherClasses.length > 1 && (
+                  {distinctClasses.length > 1 && (
                     <div className="flex flex-wrap items-center gap-2">
                       <label htmlFor="teacher-attendance-class" className="text-xs font-semibold text-slate-600">
                         Class:
@@ -834,7 +834,7 @@ export function TeacherDashboard() {
                         className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-400/20"
                       >
                         <option value="">Select class</option>
-                        {classTeacherClasses.map((c) => (
+                        {distinctClasses.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.name}
                           </option>
@@ -872,7 +872,7 @@ export function TeacherDashboard() {
                   </button>
                 </div>
 
-                {classTeacherClasses.length > 0 && (
+                {distinctClasses.length > 0 && (
                   <div className="mt-5">
                     {!selectedAttendanceClass || !profile ? null : attendanceTab === 'mark' ? (
                       <AttendanceMarkingGrid

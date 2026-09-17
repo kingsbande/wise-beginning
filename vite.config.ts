@@ -17,8 +17,8 @@ export default defineConfig({
       registerType: 'prompt',
       injectRegister: 'inline',
       manifest: {
-        name: "April's Academy",
-        short_name: "April's Academy",
+        name: "Wise beginning",
+        short_name: "Wise beginning",
         description: 'Student registration and parent dashboard',
         icons: [
           {

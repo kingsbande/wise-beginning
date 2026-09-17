@@ -938,6 +938,219 @@ ALTER TABLE public.weekly_performance_reviews ADD CONSTRAINT weekly_performance_
 CREATE INDEX idx_weekly_performance_reviews_student ON public.weekly_performance_reviews USING btree (student_id);
 CREATE INDEX idx_weekly_performance_reviews_class_week ON public.weekly_performance_reviews USING btree (class_id, week_start_date);
 
+-- Student Progression
+
+ALTER TABLE public.classes
+    ADD COLUMN IF NOT EXISTS progression_order integer,
+    ADD COLUMN IF NOT EXISTS is_terminal boolean NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_classes_school_progression_order
+    ON public.classes USING btree (school_id, progression_order);
+
+CREATE TABLE IF NOT EXISTS public.promotion_policies (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    school_id uuid NOT NULL,
+    minimum_average numeric NOT NULL DEFAULT 50,
+    use_end_of_term_only boolean NOT NULL DEFAULT true,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.promotion_policies ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY promotion_policies_school_access ON public.promotion_policies AS PERMISSIVE FOR ALL TO public
+    USING (school_id = user_school_id(auth.uid()))
+    WITH CHECK (school_id = user_school_id(auth.uid()));
+
+ALTER TABLE public.promotion_policies ADD CONSTRAINT promotion_policies_pkey PRIMARY KEY (id);
+ALTER TABLE public.promotion_policies ADD CONSTRAINT promotion_policies_school_id_fkey FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE public.promotion_policies ADD CONSTRAINT promotion_policies_minimum_average_check CHECK (minimum_average >= 0 AND minimum_average <= 100);
+ALTER TABLE public.promotion_policies ADD CONSTRAINT promotion_policies_school_id_key UNIQUE (school_id);
+
+CREATE TABLE IF NOT EXISTS public.promotion_runs (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    school_id uuid NOT NULL,
+    source_academic_year text NOT NULL,
+    target_academic_year text NOT NULL,
+    final_term_id uuid NOT NULL,
+    minimum_average numeric NOT NULL,
+    status text NOT NULL DEFAULT 'review',
+    created_by uuid,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    approved_by uuid,
+    approved_at timestamp with time zone
+);
+
+ALTER TABLE public.promotion_runs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY promotion_runs_school_access ON public.promotion_runs AS PERMISSIVE FOR ALL TO public
+    USING (school_id = user_school_id(auth.uid()))
+    WITH CHECK (school_id = user_school_id(auth.uid()));
+
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_pkey PRIMARY KEY (id);
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_school_id_fkey FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_final_term_id_fkey FOREIGN KEY (final_term_id) REFERENCES terms(id);
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id);
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES profiles(id);
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_minimum_average_check CHECK (minimum_average >= 0 AND minimum_average <= 100);
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_status_check CHECK (status = ANY (ARRAY['review'::text, 'approved'::text, 'cancelled'::text]));
+ALTER TABLE public.promotion_runs ADD CONSTRAINT promotion_runs_school_years_key UNIQUE (school_id, source_academic_year, target_academic_year);
+
+CREATE TABLE IF NOT EXISTS public.promotion_decisions (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    promotion_run_id uuid NOT NULL,
+    school_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    source_class_id uuid NOT NULL,
+    destination_class_id uuid,
+    average_score numeric,
+    missing_subject_count integer NOT NULL DEFAULT 0,
+    outcome text NOT NULL,
+    reason text NOT NULL,
+    override_note text,
+    created_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.promotion_decisions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY promotion_decisions_school_access ON public.promotion_decisions AS PERMISSIVE FOR ALL TO public
+    USING (school_id = user_school_id(auth.uid()))
+    WITH CHECK (school_id = user_school_id(auth.uid()));
+
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_pkey PRIMARY KEY (id);
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_promotion_run_id_fkey FOREIGN KEY (promotion_run_id) REFERENCES promotion_runs(id) ON DELETE CASCADE;
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_school_id_fkey FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE;
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE RESTRICT;
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_source_class_id_fkey FOREIGN KEY (source_class_id) REFERENCES classes(id);
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_destination_class_id_fkey FOREIGN KEY (destination_class_id) REFERENCES classes(id);
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_average_score_check CHECK (average_score >= 0 AND average_score <= 100);
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_missing_subject_count_check CHECK (missing_subject_count >= 0);
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_outcome_check CHECK (outcome = ANY (ARRAY['promote'::text, 'retain'::text, 'manual_review'::text, 'graduate'::text, 'exclude'::text]));
+ALTER TABLE public.promotion_decisions ADD CONSTRAINT promotion_decisions_run_student_key UNIQUE (promotion_run_id, student_id);
+
+CREATE INDEX idx_promotion_decisions_run ON public.promotion_decisions USING btree (promotion_run_id);
+CREATE INDEX idx_promotion_decisions_student ON public.promotion_decisions USING btree (student_id);
+
+CREATE OR REPLACE FUNCTION public.create_promotion_run(
+    p_source_academic_year text,
+    p_target_academic_year text,
+    p_final_term_id uuid,
+    p_minimum_average numeric DEFAULT 50
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_school_id uuid := user_school_id(auth.uid());
+    v_run_id uuid;
+BEGIN
+    IF v_school_id IS NULL THEN
+        RAISE EXCEPTION 'No school is associated with the current user';
+    END IF;
+
+    IF p_minimum_average < 0 OR p_minimum_average > 100 THEN
+        RAISE EXCEPTION 'Minimum average must be between 0 and 100';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM public.terms
+        WHERE id = p_final_term_id
+          AND school_id = v_school_id
+          AND academic_year = p_source_academic_year
+    ) THEN
+        RAISE EXCEPTION 'The selected final term does not belong to the source academic year';
+    END IF;
+
+    INSERT INTO public.promotion_runs (
+        school_id, source_academic_year, target_academic_year, final_term_id,
+        minimum_average, created_by
+    )
+    VALUES (
+        v_school_id, p_source_academic_year, p_target_academic_year, p_final_term_id,
+        p_minimum_average, auth.uid()
+    )
+    RETURNING id INTO v_run_id;
+
+    WITH required_subjects AS (
+        SELECT cs.class_id, count(*)::integer AS subject_count
+        FROM public.class_subjects cs
+        GROUP BY cs.class_id
+    ),
+    student_scores AS (
+        SELECT
+            s.id AS student_id,
+            s.class_id AS source_class_id,
+            c.is_terminal,
+            COALESCE(rs.subject_count, 0) AS required_subject_count,
+            count(DISTINCT CASE WHEN g.assessment_type = 'end_of_term' THEN g.subject_id END)::integer AS scored_subject_count,
+            avg(g.score) FILTER (WHERE g.assessment_type = 'end_of_term') AS average_score
+        FROM public.students s
+        JOIN public.classes c ON c.id = s.class_id AND c.school_id = v_school_id
+        LEFT JOIN required_subjects rs ON rs.class_id = s.class_id
+        LEFT JOIN public.grades g
+            ON g.student_id = s.id
+            AND g.term_id = p_final_term_id
+            AND g.assessment_type = 'end_of_term'
+            AND g.school_id = v_school_id
+        WHERE s.school_id = v_school_id
+          AND s.status = 'active'
+          AND s.academic_year = p_source_academic_year
+        GROUP BY s.id, s.class_id, c.is_terminal, rs.subject_count
+    )
+    INSERT INTO public.promotion_decisions (
+        promotion_run_id, school_id, student_id, source_class_id,
+        destination_class_id, average_score, missing_subject_count, outcome, reason
+    )
+    SELECT
+        v_run_id,
+        v_school_id,
+        ss.student_id,
+        ss.source_class_id,
+        CASE WHEN ss.is_terminal THEN NULL ELSE next_class.id END,
+        round(ss.average_score, 2),
+        GREATEST(ss.required_subject_count - ss.scored_subject_count, 0),
+        CASE
+            WHEN ss.required_subject_count = 0 THEN 'manual_review'
+            WHEN ss.scored_subject_count < ss.required_subject_count THEN 'manual_review'
+            WHEN ss.is_terminal AND ss.average_score >= p_minimum_average THEN 'graduate'
+            WHEN ss.average_score >= p_minimum_average AND next_class.id IS NOT NULL THEN 'promote'
+            WHEN ss.average_score < p_minimum_average THEN 'retain'
+            ELSE 'manual_review'
+        END,
+        CASE
+            WHEN ss.required_subject_count = 0 THEN 'No subjects are configured for the current class'
+            WHEN ss.scored_subject_count < ss.required_subject_count THEN 'Required end-of-term grades are missing'
+            WHEN ss.is_terminal AND ss.average_score >= p_minimum_average THEN 'Meets the configured average for graduation review'
+            WHEN ss.average_score >= p_minimum_average AND next_class.id IS NOT NULL THEN 'Meets the configured average'
+            WHEN ss.average_score < p_minimum_average THEN 'Below the configured minimum average'
+            ELSE 'No destination class is configured'
+        END
+    FROM student_scores ss
+    LEFT JOIN LATERAL (
+        SELECT c.id
+        FROM public.classes c
+        WHERE c.school_id = v_school_id
+          AND c.progression_order = (
+              SELECT source_class.progression_order + 1
+              FROM public.classes source_class
+              WHERE source_class.id = ss.source_class_id
+          )
+        ORDER BY c.name
+        LIMIT 1
+    ) next_class ON true;
+
+    RETURN v_run_id;
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE EXCEPTION 'A promotion run already exists for this academic-year pair';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_promotion_run(text, text, uuid, numeric) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_promotion_run(text, text, uuid, numeric) TO authenticated;
+
 -- Teacher Curriculum Topics / Progress KPI
 
 CREATE TABLE public.curriculum_topics (
