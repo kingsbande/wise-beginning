@@ -22,6 +22,7 @@ export function FeesSetupTab() {
   const { data: structures = [] } = useQuery({ queryKey: ['fee-structures'], queryFn: fetchFeeStructures })
 
   const [newCategoryName, setNewCategoryName] = useState('')
+  const [newCategoryFlexible, setNewCategoryFlexible] = useState(false)
   const [structureClassId, setStructureClassId] = useState('')
   const [structureCategoryId, setStructureCategoryId] = useState('')
   const [structureTermId, setStructureTermId] = useState('')
@@ -30,9 +31,11 @@ export function FeesSetupTab() {
   const [generateMessage, setGenerateMessage] = useState<string | null>(null)
 
   const addCategoryMutation = useMutation({
-    mutationFn: (name: string) => addFeeCategory(profile!.school_id, name),
+    mutationFn: ({ name, isFlexible }: { name: string; isFlexible: boolean }) =>
+      addFeeCategory(profile!.school_id, name, isFlexible),
     onSuccess: () => {
       setNewCategoryName('')
+      setNewCategoryFlexible(false)
       queryClient.invalidateQueries({ queryKey: ['fee-categories'] })
     },
   })
@@ -74,7 +77,7 @@ export function FeesSetupTab() {
   function handleAddCategory(e: FormEvent) {
     e.preventDefault()
     if (newCategoryName.trim() === '') return
-    addCategoryMutation.mutate(newCategoryName.trim())
+    addCategoryMutation.mutate({ name: newCategoryName.trim(), isFlexible: newCategoryFlexible })
   }
 
   function handleSaveStructure(e: FormEvent) {
@@ -92,7 +95,7 @@ export function FeesSetupTab() {
           school uses.
         </p>
 
-        <form onSubmit={handleAddCategory} className="mt-3 flex gap-2">
+        <form onSubmit={handleAddCategory} className="mt-3 flex flex-wrap items-center gap-2">
           <input
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
@@ -106,12 +109,23 @@ export function FeesSetupTab() {
           >
             Add
           </button>
+          <label className="flex items-center gap-2 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={newCategoryFlexible}
+              onChange={(e) => setNewCategoryFlexible(e.target.checked)}
+            />
+            Flexible (student-specific)
+          </label>
         </form>
 
         <ul className="mt-3 divide-y divide-gray-100">
           {categories.map((c) => (
             <li key={c.id} className="flex items-center justify-between py-2 text-sm">
-              <span>{c.name}</span>
+              <span>
+                {c.name}
+                {c.is_flexible && <span className="ml-2 text-xs text-blue-600">Flexible</span>}
+              </span>
               <button
                 onClick={() => deleteCategoryMutation.mutate(c.id)}
                 className="text-xs font-medium text-red-600 underline hover:text-red-800"
@@ -150,7 +164,7 @@ export function FeesSetupTab() {
             className="rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
           >
             <option value="">Category</option>
-            {categories.map((c) => (
+            {categories.filter((c) => !c.is_flexible).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>

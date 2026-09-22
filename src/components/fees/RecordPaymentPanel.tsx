@@ -3,10 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../context/AuthContext'
 import { searchStudentsForPicker, StudentPickerRow } from '../../lib/queries'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
+import { fetchTerms } from '../../lib/gradesApi'
 import {
   adjustChargeAmount,
+  fetchFeeCategories,
   fetchPaymentHistory,
   fetchStudentFeeSummary,
+  recordFlexiblePayment,
   recordPayment,
 } from '../../lib/feesApi'
 import { getUserFriendlyError } from '../../lib/errorMessages'
@@ -21,6 +24,10 @@ export function RecordPaymentPanel() {
   const [selectedStudent, setSelectedStudent] = useState<StudentPickerRow | null>(null)
   const [payingChargeId, setPayingChargeId] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
+  const [flexibleCategoryId, setFlexibleCategoryId] = useState('')
+  const [flexibleTermId, setFlexibleTermId] = useState('')
+  const [flexibleTotalDue, setFlexibleTotalDue] = useState('')
+  const [flexibleAmount, setFlexibleAmount] = useState('')
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [method, setMethod] = useState('')
   const [note, setNote] = useState('')
@@ -40,6 +47,16 @@ export function RecordPaymentPanel() {
     queryKey: ['student-fee-summary', selectedStudent?.id],
     queryFn: () => fetchStudentFeeSummary(selectedStudent!.id),
     enabled: !!selectedStudent,
+  })
+
+  const { data: flexibleCategories = [] } = useQuery({
+    queryKey: ['fee-categories'],
+    queryFn: fetchFeeCategories,
+  })
+
+  const { data: terms = [] } = useQuery({
+    queryKey: ['terms'],
+    queryFn: fetchTerms,
   })
 
   const { data: history = [] } = useQuery({
@@ -95,6 +112,60 @@ export function RecordPaymentPanel() {
     onError: (err: Error) => {
       void logError(err, { type: 'payment_recording' })
       setError(getUserFriendlyError(err, 'We could not record the payment. Please try again.'))
+    },
+  })
+
+  const flexiblePaymentMutation = useMutation({
+    mutationFn: async () => {
+      const numericAmount = Number(flexibleAmount)
+      if (!flexibleCategoryId || !flexibleTermId) throw new Error('Select a flexible category and term.')
+      if (!numericAmount || numericAmount <= 0) throw new Error('Enter a valid amount.')
+      const numericTotalDue = Number(flexibleTotalDue)
+      return recordFlexiblePayment({
+        schoolId: profile!.school_id,
+        studentId: selectedStudent!.id,
+        feeCategoryId: flexibleCategoryId,
+        termId: flexibleTermId,
+        totalDue: numericTotalDue > 0 ? numericTotalDue : undefined,
+        amount: numericAmount,
+        paymentDate,
+        method,
+        note,
+        recordedBy: profile!.id,
+      })
+    },
+    onSuccess: async ({ payment, charge }) => {
+      const receipt: PaymentReceiptParams = {
+        schoolName: profile?.school_name ?? 'School',
+        logoUrl: profile?.school_logo_url ?? null,
+        receiptNumber: payment.id.slice(0, 8).toUpperCase(),
+        studentName: selectedStudent!.full_name,
+        admissionNumber: selectedStudent!.admission_number,
+        className: selectedStudent!.class_name,
+        categoryName: charge.category_name,
+        termName: charge.term_name,
+        amountDue: charge.amount_due,
+        amountPaid: payment.amount,
+        balance: charge.balance,
+        paymentDate: payment.payment_date,
+        method: payment.method,
+        note: payment.note,
+      }
+      setLastReceipt(receipt)
+      await generatePaymentReceiptPdf(receipt)
+      queryClient.invalidateQueries({ queryKey: ['student-fee-summary', selectedStudent?.id] })
+      queryClient.invalidateQueries({ queryKey: ['fee-payment-history'] })
+      setFlexibleCategoryId('')
+      setFlexibleTermId('')
+      setFlexibleTotalDue('')
+      setFlexibleAmount('')
+      setMethod('')
+      setNote('')
+      setError(null)
+    },
+    onError: (err: Error) => {
+      void logError(err, { type: 'flexible_payment_recording' })
+      setError(getUserFriendlyError(err, 'We could not record the flexible payment. Please try again.'))
     },
   })
 
@@ -173,6 +244,78 @@ export function RecordPaymentPanel() {
             >
               Download Receipt Again
             </button>
+          </div>
+        )}
+        {flexibleCategories.some((category) => category.is_flexible) && (
+          <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
+            <p className="text-sm font-medium text-gray-900">Record Flexible Fee</p>
+            <p className="mt-1 text-xs text-gray-600">This fee applies only to this student and term.</p>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
+              <select
+                value={flexibleCategoryId}
+                onChange={(e) => setFlexibleCategoryId(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              >
+                <option value="">Category</option>
+                {flexibleCategories.filter((category) => category.is_flexible).map((category) => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
+              </select>
+              <select
+                value={flexibleTermId}
+                onChange={(e) => setFlexibleTermId(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              >
+                <option value="">Term</option>
+                {terms.map((term) => (
+                  <option key={term.id} value={term.id}>{term.name} — {term.academic_year}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={0}
+                value={flexibleTotalDue}
+                onChange={(e) => setFlexibleTotalDue(e.target.value)}
+                placeholder="Total due (first payment)"
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              />
+              <input
+                type="number"
+                min={0}
+                value={flexibleAmount}
+                onChange={(e) => setFlexibleAmount(e.target.value)}
+                placeholder="Amount"
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              />
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              />
+              <button
+                onClick={() => flexiblePaymentMutation.mutate()}
+                disabled={flexiblePaymentMutation.isPending}
+                className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+              >
+                {flexiblePaymentMutation.isPending ? 'Saving...' : 'Record Flexible Payment'}
+              </button>
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                placeholder="Method (optional)"
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              />
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Note (optional)"
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              />
+            </div>
+            {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
           </div>
         )}
         {summaryLoading ? (

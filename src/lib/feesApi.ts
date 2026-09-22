@@ -6,13 +6,18 @@ import { FeeBalanceRow, FeeCategory, FeePayment, FeeStructure, StudentFeeSummary
 // Categories
 // ------------------------------------------------------------
 export async function fetchFeeCategories(): Promise<FeeCategory[]> {
-  const { data, error } = await supabase.from('fee_categories').select('id, name').order('name')
+  const { data, error } = await supabase
+    .from('fee_categories')
+    .select('id, name, is_flexible')
+    .order('name')
   if (error) throw error
   return (data ?? []) as FeeCategory[]
 }
 
-export async function addFeeCategory(schoolId: string, name: string): Promise<void> {
-  const { error } = await supabase.from('fee_categories').insert({ school_id: schoolId, name })
+export async function addFeeCategory(schoolId: string, name: string, isFlexible: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('fee_categories')
+    .insert({ school_id: schoolId, name, is_flexible: isFlexible })
   if (error) throw error
 }
 
@@ -96,11 +101,13 @@ export async function generateChargesFromStructure(
 ): Promise<number> {
   const { data: structure, error: structureError } = await supabase
     .from('fee_structures')
-    .select('class_id, fee_category_id, term_id, amount')
+    .select('class_id, fee_category_id, term_id, amount, fee_categories ( is_flexible )')
     .eq('id', structureId)
     .single()
 
   if (structureError) throw structureError
+  const category = structure.fee_categories as unknown as { is_flexible: boolean } | null
+  if (category?.is_flexible) return 0
 
   const { data: students, error: studentsError } = await supabase
     .from('students')
@@ -126,6 +133,135 @@ export async function generateChargesFromStructure(
 
   if (upsertError) throw upsertError
   return students.length
+}
+
+export async function applyFeeStructuresToStudent(params: {
+  studentId: string
+  classId: string
+  schoolId: string
+}): Promise<number> {
+  const { data: structures, error: structuresError } = await supabase
+    .from('fee_structures')
+    .select('fee_category_id, term_id, amount, fee_categories ( is_flexible )')
+    .eq('school_id', params.schoolId)
+    .eq('class_id', params.classId)
+
+  if (structuresError) throw structuresError
+  const fixedStructures = (structures ?? []).filter((structure) => {
+    const category = structure.fee_categories as unknown as { is_flexible: boolean } | null
+    return !category?.is_flexible
+  })
+  if (fixedStructures.length === 0) return 0
+
+  const payload = fixedStructures.map((structure) => ({
+    school_id: params.schoolId,
+    student_id: params.studentId,
+    fee_category_id: structure.fee_category_id,
+    term_id: structure.term_id,
+    amount_due: structure.amount,
+    updated_at: new Date().toISOString(),
+  }))
+
+  const { error: upsertError } = await supabase
+    .from('fee_charges')
+    .upsert(payload, { onConflict: 'student_id,fee_category_id,term_id' })
+
+  if (upsertError) throw upsertError
+  return fixedStructures.length
+}
+
+export async function recordFlexiblePayment(params: {
+  schoolId: string
+  studentId: string
+  feeCategoryId: string
+  termId: string
+  totalDue?: number
+  amount: number
+  paymentDate: string
+  method: string
+  note: string
+  recordedBy: string
+}): Promise<{ payment: FeePayment; charge: StudentFeeSummaryRow }> {
+  const { data: category, error: categoryError } = await supabase
+    .from('fee_categories')
+    .select('id, is_flexible')
+    .eq('id', params.feeCategoryId)
+    .eq('school_id', params.schoolId)
+    .single()
+
+  if (categoryError) throw categoryError
+  if (!category.is_flexible) throw new Error('Only flexible categories can be used for this payment.')
+
+  const { data: existingCharge, error: chargeLookupError } = await supabase
+    .from('fee_charges')
+    .select('id, amount_due, fee_categories ( name ), terms ( name, academic_year )')
+    .eq('student_id', params.studentId)
+    .eq('fee_category_id', params.feeCategoryId)
+    .eq('term_id', params.termId)
+    .maybeSingle()
+
+  if (chargeLookupError) throw chargeLookupError
+
+  const amountDue = existingCharge?.amount_due ?? params.totalDue
+  if (amountDue === undefined || amountDue <= 0) {
+    throw new Error('Enter the total due amount for this flexible fee.')
+  }
+  if (amountDue < params.amount) {
+    throw new Error('The payment amount cannot be greater than the total due.')
+  }
+
+  const paidBefore = existingCharge
+    ? await getPaidAmount(existingCharge.id)
+    : 0
+  const { data: charge, error: chargeError } = await supabase
+    .from('fee_charges')
+    .upsert(
+      {
+        school_id: params.schoolId,
+        student_id: params.studentId,
+        fee_category_id: params.feeCategoryId,
+        term_id: params.termId,
+        amount_due: amountDue,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'student_id,fee_category_id,term_id' },
+    )
+    .select('id, amount_due, fee_categories ( name ), terms ( name, academic_year )')
+    .single()
+
+  if (chargeError) throw chargeError
+
+  const payment = await recordPayment({
+    schoolId: params.schoolId,
+    feeChargeId: charge.id,
+    amount: params.amount,
+    paymentDate: params.paymentDate,
+    method: params.method,
+    note: params.note,
+    recordedBy: params.recordedBy,
+  })
+
+  const amountPaid = paidBefore + params.amount
+  return {
+    payment,
+    charge: {
+      fee_charge_id: charge.id,
+      category_name: (charge.fee_categories as unknown as { name: string } | null)?.name ?? 'Unknown',
+      term_name: `${(charge.terms as unknown as { name: string; academic_year: string } | null)?.name ?? 'Term'} (${(charge.terms as unknown as { name: string; academic_year: string } | null)?.academic_year ?? ''})`,
+      amount_due: Number(charge.amount_due),
+      amount_paid: amountPaid,
+      balance: Math.max(0, Number(charge.amount_due) - amountPaid),
+    },
+  }
+}
+
+async function getPaidAmount(feeChargeId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('fee_payments')
+    .select('amount')
+    .eq('fee_charge_id', feeChargeId)
+  if (error) throw error
+  return (data ?? []).reduce((total, payment) => total + Number(payment.amount), 0)
 }
 
 // ------------------------------------------------------------

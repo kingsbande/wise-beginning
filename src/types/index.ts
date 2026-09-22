@@ -213,6 +213,7 @@ export interface AttendanceSummaryRow {
 export interface FeeCategory {
   id: string
   name: string
+  is_flexible: boolean
 }
 
 export interface FeeStructure {
