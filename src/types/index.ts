@@ -158,9 +158,15 @@ export interface CurriculumTopic {
   note: string | null
   taught_on: string | null
   completed: boolean
+  approval_status: CurriculumTopicApprovalStatus
+  approval_comment: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
   created_at: string
   updated_at: string
 }
+
+export type CurriculumTopicApprovalStatus = 'not_started' | 'pending_approval' | 'approved' | 'disapproved'
 
 export interface CurriculumTopicProgress {
   school_id: string

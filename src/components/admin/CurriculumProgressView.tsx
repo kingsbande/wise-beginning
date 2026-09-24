@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BarChart3, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { fetchCurriculumProgress, fetchCurriculumTopicsForAdmin, fetchTerms, updateCurriculumTopic } from '../../lib/topicsApi'
+import { fetchCurriculumProgress, fetchCurriculumTopicsForAdmin, fetchTerms, reviewCurriculumTopic } from '../../lib/topicsApi'
 import { CurriculumTopic, CurriculumTopicProgress } from '../../types'
 
 export function CurriculumProgressView() {
@@ -11,23 +11,26 @@ export function CurriculumProgressView() {
   const [teacherId, setTeacherId] = useState('')
   const [classId, setClassId] = useState('')
   const [subjectId, setSubjectId] = useState('')
-  const [topicToDisapprove, setTopicToDisapprove] = useState<CurriculumTopic | null>(null)
-  const [disapproveError, setDisapproveError] = useState<string | null>(null)
+  const [topicToReview, setTopicToReview] = useState<CurriculumTopic | null>(null)
+  const [reviewAction, setReviewAction] = useState<'approved' | 'disapproved' | null>(null)
+  const [reviewComment, setReviewComment] = useState('')
+  const [reviewError, setReviewError] = useState<string | null>(null)
   const { data: terms = [], isLoading: isTermsLoading } = useQuery({ queryKey: ['terms'], queryFn: fetchTerms })
 
-  const disapproveMutation = useMutation({
-    mutationFn: (topic: CurriculumTopic) =>
-      updateCurriculumTopic(topic.id, { completed: false, taught_on: null }),
+  const reviewMutation = useMutation({
+    mutationFn: () => reviewCurriculumTopic({ id: topicToReview!.id, status: reviewAction!, comment: reviewComment }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['curriculum-progress', termId] }),
         queryClient.invalidateQueries({ queryKey: ['curriculum-topics-admin', termId] }),
       ])
-      setTopicToDisapprove(null)
-      setDisapproveError(null)
+      setTopicToReview(null)
+      setReviewAction(null)
+      setReviewComment('')
+      setReviewError(null)
     },
     onError: (error: Error) => {
-      setDisapproveError(error.message || 'The topic could not be disapproved.')
+      setReviewError(error.message || 'The topic could not be reviewed.')
     },
   })
 
@@ -81,29 +84,42 @@ export function CurriculumProgressView() {
       {isLoading || isTopicsLoading ? <Loading /> : isError || isTopicsError ? <Empty title="Progress could not load" message="Refresh the page and try again." /> : filteredRows.length === 0 ? <Empty title="No topic progress yet" message="Teachers will appear here after they add topics for the selected term." /> : (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 p-4 sm:p-5"><BarChart3 className="h-5 w-5 text-rose-600" /><h3 className="font-semibold text-slate-900">Progress by class and subject</h3></div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">Teacher</th><th className="px-5 py-3 font-semibold">Class</th><th className="px-5 py-3 font-semibold">Subject</th><th className="px-5 py-3 font-semibold">Topics</th><th className="px-5 py-3 font-semibold">Progress</th><th className="px-5 py-3 font-semibold">Details</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredRows.map((row) => <ProgressRow key={`${row.teacher_id}-${row.class_id}-${row.subject_id}`} row={row} topics={topics.filter((topic) => topic.teacher_id === row.teacher_id && topic.class_id === row.class_id && topic.subject_id === row.subject_id)} onDisapprove={setTopicToDisapprove} />)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">Teacher</th><th className="px-5 py-3 font-semibold">Class</th><th className="px-5 py-3 font-semibold">Subject</th><th className="px-5 py-3 font-semibold">Topics</th><th className="px-5 py-3 font-semibold">Progress</th><th className="px-5 py-3 font-semibold">Details</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredRows.map((row) => <ProgressRow key={`${row.teacher_id}-${row.class_id}-${row.subject_id}`} row={row} topics={topics.filter((topic) => topic.teacher_id === row.teacher_id && topic.class_id === row.class_id && topic.subject_id === row.subject_id)} onReview={(topic, action) => { setTopicToReview(topic); setReviewAction(action); setReviewError(null) }} />)}</tbody></table></div>
         </div>
       )}
-      {disapproveError && <p className="text-sm text-red-600">{disapproveError}</p>}
-      {topicToDisapprove && (
+      {reviewError && <p className="text-sm text-red-600">{reviewError}</p>}
+      {topicToReview && reviewAction === 'approved' && (
         <ConfirmDialog
-          title="Disapprove taught topic?"
-          message={`This will mark "${topicToDisapprove.title}" as not taught and remove it from the completed progress count.`}
-          confirmLabel={disapproveMutation.isPending ? 'Disapproving...' : 'Disapprove'}
+          title={reviewAction === 'approved' ? 'Approve taught topic?' : 'Disapprove taught topic?'}
+          message={reviewAction === 'approved' ? `Approve "${topicToReview.title}" as taught?` : `Disapprove "${topicToReview.title}" and return it to the teacher for correction?`}
+          confirmLabel={reviewMutation.isPending ? 'Saving...' : reviewAction === 'approved' ? 'Approve' : 'Disapprove'}
           onCancel={() => {
-            if (!disapproveMutation.isPending) setTopicToDisapprove(null)
+            if (!reviewMutation.isPending) {
+              setTopicToReview(null)
+              setReviewAction(null)
+              setReviewComment('')
+            }
           }}
-          onConfirm={() => disapproveMutation.mutate(topicToDisapprove)}
+          onConfirm={() => reviewMutation.mutate()}
         />
+      )}
+      {topicToReview && reviewAction === 'disapproved' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <label className="text-sm font-medium text-slate-700">Reason for disapproval</label>
+            <textarea value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} rows={4} maxLength={2000} className="mt-2 w-full rounded-lg border border-slate-300 p-3 text-sm focus:border-rose-400 focus:outline-none" placeholder="Explain what the teacher should correct before resubmitting." />
+            <div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => { setTopicToReview(null); setReviewAction(null); setReviewComment('') }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">Cancel</button><button type="button" onClick={() => { if (reviewComment.trim()) reviewMutation.mutate() }} disabled={!reviewComment.trim() || reviewMutation.isPending} className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{reviewMutation.isPending ? 'Saving...' : 'Disapprove'}</button></div>
+          </div>
+        </div>
       )}
     </div>
   )
 }
 
-function ProgressRow({ row, topics, onDisapprove }: { row: CurriculumTopicProgress; topics: CurriculumTopic[]; onDisapprove: (topic: CurriculumTopic) => void }) {
+function ProgressRow({ row, topics, onReview }: { row: CurriculumTopicProgress; topics: CurriculumTopic[]; onReview: (topic: CurriculumTopic, action: 'approved' | 'disapproved') => void }) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const completedTopics = topics.filter((topic) => topic.completed)
-  const remainingTopics = topics.filter((topic) => !topic.completed)
+  const completedTopics = topics.filter((topic) => topic.approval_status === 'approved')
+  const remainingTopics = topics.filter((topic) => topic.approval_status !== 'approved')
 
   return (
     <>
@@ -115,13 +131,13 @@ function ProgressRow({ row, topics, onDisapprove }: { row: CurriculumTopicProgre
         <td className="px-5 py-4"><div className="flex items-center gap-3"><div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${row.completion_rate}%` }} /></div><span className="font-semibold text-slate-700">{row.completion_rate}%</span></div></td>
         <td className="px-5 py-4"><button type="button" onClick={() => setIsExpanded((expanded) => !expanded)} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50" aria-expanded={isExpanded}>{isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} {isExpanded ? 'Hide' : 'View topics'}</button></td>
       </tr>
-      {isExpanded && <tr><td colSpan={6} className="bg-slate-50 px-5 py-5"><div className="grid gap-5 lg:grid-cols-2"><TopicGroup title="Marked topics" topics={completedTopics} completed onDisapprove={onDisapprove} /><TopicGroup title="Remaining topics" topics={remainingTopics} /></div></td></tr>}
+      {isExpanded && <tr><td colSpan={6} className="bg-slate-50 px-5 py-5"><div className="grid gap-5 lg:grid-cols-2"><TopicGroup title="Approved topics" topics={completedTopics} completed onReview={onReview} /><TopicGroup title="Topics awaiting review" topics={remainingTopics} onReview={onReview} /></div></td></tr>}
     </>
   )
 }
 
-function TopicGroup({ title, topics, completed = false, onDisapprove }: { title: string; topics: CurriculumTopic[]; completed?: boolean; onDisapprove?: (topic: CurriculumTopic) => void }) {
-  return <div><h4 className={`text-xs font-semibold uppercase tracking-wide ${completed ? 'text-emerald-700' : 'text-amber-700'}`}>{title} <span className="font-normal">({topics.length})</span></h4>{topics.length === 0 ? <p className="mt-2 text-sm text-slate-500">{completed ? 'No topics marked yet.' : 'All topics are marked complete.'}</p> : <div className="mt-2 space-y-2">{topics.map((topic) => <div key={topic.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"><div><p className="text-sm font-medium text-slate-800">{topic.title}</p>{completed && topic.note && <p className="mt-1 text-xs text-slate-500">Note: {topic.note}</p>}{completed && topic.taught_on && <p className="mt-1 text-[11px] text-slate-400">Taught on {topic.taught_on}</p>}</div>{completed && onDisapprove && <button type="button" onClick={() => onDisapprove(topic)} className="shrink-0 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">Disapprove</button>}</div>)}</div>}</div>
+function TopicGroup({ title, topics, completed = false, onReview }: { title: string; topics: CurriculumTopic[]; completed?: boolean; onReview: (topic: CurriculumTopic, action: 'approved' | 'disapproved') => void }) {
+  return <div><h4 className={`text-xs font-semibold uppercase tracking-wide ${completed ? 'text-emerald-700' : 'text-amber-700'}`}>{title} <span className="font-normal">({topics.length})</span></h4>{topics.length === 0 ? <p className="mt-2 text-sm text-slate-500">{completed ? 'No approved topics yet.' : 'No topics awaiting review.'}</p> : <div className="mt-2 space-y-2">{topics.map((topic) => <div key={topic.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"><div><p className="text-sm font-medium text-slate-800">{topic.title}</p><p className={`mt-1 text-xs font-semibold ${topic.approval_status === 'pending_approval' ? 'text-amber-700' : topic.approval_status === 'disapproved' ? 'text-red-600' : topic.approval_status === 'approved' ? 'text-emerald-700' : 'text-slate-500'}`}>Status: {topic.approval_status.replace('_', ' ')}</p>{topic.note && <p className="mt-1 text-xs text-slate-500">Note: {topic.note}</p>}{topic.approval_comment && <p className="mt-1 text-xs text-red-600">Review comment: {topic.approval_comment}</p>}</div><div className="flex shrink-0 gap-2">{!completed && topic.approval_status === 'pending_approval' && <><button type="button" onClick={() => onReview(topic, 'approved')} className="rounded-lg border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button><button type="button" onClick={() => onReview(topic, 'disapproved')} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">Disapprove</button></>}</div></div>)}</div>}</div>
 }
 
 function uniqueBy<T extends object>(rows: T[], idKey: keyof T, labelKey: keyof T) {

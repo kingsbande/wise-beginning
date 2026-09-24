@@ -353,6 +353,53 @@ export async function recordPayment(params: {
   return data as FeePayment
 }
 
+export async function updatePayment(params: {
+  paymentId: string
+  feeChargeId: string
+  amount: number
+  paymentDate: string
+  method: string
+  note: string
+}): Promise<FeePayment> {
+  if (params.amount <= 0) throw new Error('Payment amount must be greater than zero.')
+
+  const { data: charge, error: chargeError } = await supabase
+    .from('fee_charges')
+    .select('amount_due')
+    .eq('id', params.feeChargeId)
+    .single()
+  if (chargeError) throw chargeError
+
+  const { data: payments, error: paymentsError } = await supabase
+    .from('fee_payments')
+    .select('id, amount')
+    .eq('fee_charge_id', params.feeChargeId)
+  if (paymentsError) throw paymentsError
+
+  const otherPaymentsTotal = (payments ?? [])
+    .filter((payment) => payment.id !== params.paymentId)
+    .reduce((total, payment) => total + Number(payment.amount), 0)
+  if (otherPaymentsTotal + params.amount > Number(charge.amount_due)) {
+    throw new Error('The corrected payment would exceed the charge balance.')
+  }
+
+  const { data, error } = await supabase
+    .from('fee_payments')
+    .update({
+      amount: params.amount,
+      payment_date: params.paymentDate,
+      method: params.method || null,
+      note: params.note || null,
+    })
+    .eq('id', params.paymentId)
+    .eq('fee_charge_id', params.feeChargeId)
+    .select('id, fee_charge_id, amount, payment_date, method, note, created_at')
+    .single()
+
+  if (error) throw error
+  return data as FeePayment
+}
+
 // For one-off manual adjustments (scholarship, mid-term joiner,
 // correction) — separate from the bulk generate-from-structure flow.
 export async function adjustChargeAmount(feeChargeId: string, newAmount: number): Promise<void> {

@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient'
-import { CurriculumTopic, CurriculumTopicProgress, Term } from '../types'
+import { CurriculumTopic, CurriculumTopicApprovalStatus, CurriculumTopicProgress, Term } from '../types'
 
 export async function fetchTerms(): Promise<Term[]> {
   const { data, error } = await supabase
@@ -71,7 +71,7 @@ export async function createCurriculumTopic(params: {
 
 export async function updateCurriculumTopic(
   id: string,
-  changes: Partial<Pick<CurriculumTopic, 'title' | 'note' | 'taught_on' | 'completed'>>,
+  changes: Partial<Pick<CurriculumTopic, 'title' | 'note' | 'taught_on'>>,
 ): Promise<void> {
   const { error } = await supabase
     .from('curriculum_topics')
@@ -97,4 +97,47 @@ export async function fetchCurriculumProgress(termId: string): Promise<Curriculu
 
   if (error) throw error
   return (data ?? []) as CurriculumTopicProgress[]
+}
+
+export async function submitCurriculumTopic(id: string, taughtOn: string): Promise<void> {
+  const { error } = await supabase
+    .from('curriculum_topics')
+    .update({
+      completed: false,
+      approval_status: 'pending_approval',
+      taught_on: taughtOn,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+
+  if (error) throw error
+}
+
+export async function reviewCurriculumTopic(params: {
+  id: string
+  status: Extract<CurriculumTopicApprovalStatus, 'approved' | 'disapproved'>
+  comment?: string
+}): Promise<void> {
+  const comment = params.comment?.trim() ?? ''
+  if (params.status === 'disapproved' && comment === '') {
+    throw new Error('A reason is required when disapproving a topic.')
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!userData.user) throw new Error('You must be signed in to review a topic.')
+
+  const { error } = await supabase
+    .from('curriculum_topics')
+    .update({
+      approval_status: params.status,
+      approval_comment: comment || null,
+      reviewed_by: userData.user.id,
+      reviewed_at: new Date().toISOString(),
+      completed: params.status === 'approved',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.id)
+
+  if (error) throw error
 }

@@ -11,6 +11,7 @@ import {
   fetchStudentFeeSummary,
   recordFlexiblePayment,
   recordPayment,
+  updatePayment,
 } from '../../lib/feesApi'
 import { getUserFriendlyError } from '../../lib/errorMessages'
 import { logError } from '../../lib/errorLogger'
@@ -36,6 +37,11 @@ export function RecordPaymentPanel() {
   const [editingAmountId, setEditingAmountId] = useState<string | null>(null)
   const [editAmountValue, setEditAmountValue] = useState('')
   const [lastReceipt, setLastReceipt] = useState<PaymentReceiptParams | null>(null)
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
+  const [editPaymentAmount, setEditPaymentAmount] = useState('')
+  const [editPaymentDate, setEditPaymentDate] = useState('')
+  const [editPaymentMethod, setEditPaymentMethod] = useState('')
+  const [editPaymentNote, setEditPaymentNote] = useState('')
 
   const { data: students = [] } = useQuery({
     queryKey: ['fee-student-picker', debouncedSearch],
@@ -179,6 +185,23 @@ export function RecordPaymentPanel() {
       queryClient.invalidateQueries({ queryKey: ['student-fee-summary', selectedStudent?.id] })
       setEditingAmountId(null)
     },
+  })
+
+  const updatePaymentMutation = useMutation({
+    mutationFn: () => updatePayment({
+      paymentId: editingPaymentId!,
+      feeChargeId: expandedHistoryId!,
+      amount: Number(editPaymentAmount),
+      paymentDate: editPaymentDate,
+      method: editPaymentMethod,
+      note: editPaymentNote,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['student-fee-summary', selectedStudent?.id] })
+      queryClient.invalidateQueries({ queryKey: ['fee-payment-history', expandedHistoryId] })
+      setEditingPaymentId(null)
+    },
+    onError: (err: Error) => setError(err.message || 'The payment could not be updated.'),
   })
 
   if (!selectedStudent) {
@@ -441,10 +464,24 @@ export function RecordPaymentPanel() {
                     ) : (
                       <ul className="space-y-1 text-xs text-gray-600">
                         {history.map((p) => (
-                          <li key={p.id}>
-                            {p.payment_date} — {p.amount.toLocaleString()}
-                            {p.method ? ` (${p.method})` : ''}
-                            {p.note ? ` — ${p.note}` : ''}
+                          <li key={p.id} className="space-y-2">
+                            {editingPaymentId === p.id ? (
+                              <div className="grid grid-cols-1 gap-2 rounded-lg bg-gray-50 p-2 sm:grid-cols-4">
+                                <input type="number" min={0.01} value={editPaymentAmount} onChange={(e) => setEditPaymentAmount(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-xs" />
+                                <input type="date" value={editPaymentDate} onChange={(e) => setEditPaymentDate(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-xs" />
+                                <input value={editPaymentMethod} onChange={(e) => setEditPaymentMethod(e.target.value)} placeholder="Method" className="rounded border border-gray-300 px-2 py-1 text-xs" />
+                                <input value={editPaymentNote} onChange={(e) => setEditPaymentNote(e.target.value)} placeholder="Note" className="rounded border border-gray-300 px-2 py-1 text-xs" />
+                                <div className="flex gap-2 sm:col-span-4">
+                                  <button type="button" onClick={() => updatePaymentMutation.mutate()} disabled={updatePaymentMutation.isPending} className="rounded bg-gray-900 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50">{updatePaymentMutation.isPending ? 'Saving...' : 'Save'}</button>
+                                  <button type="button" onClick={() => setEditingPaymentId(null)} className="rounded border border-gray-300 px-2.5 py-1 text-xs">Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between gap-2">
+                                <span>{p.payment_date} — {p.amount.toLocaleString()}{p.method ? ` (${p.method})` : ''}{p.note ? ` — ${p.note}` : ''}</span>
+                                <button type="button" onClick={() => { setEditingPaymentId(p.id); setEditPaymentAmount(String(p.amount)); setEditPaymentDate(p.payment_date); setEditPaymentMethod(p.method ?? ''); setEditPaymentNote(p.note ?? ''); setError(null) }} className="shrink-0 font-medium text-blue-600 underline hover:text-blue-800">Edit</button>
+                              </div>
+                            )}
                           </li>
                         ))}
                       </ul>
