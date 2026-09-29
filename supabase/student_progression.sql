@@ -184,3 +184,114 @@ $$;
 
 REVOKE ALL ON FUNCTION public.create_promotion_run(text, text, uuid, numeric) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_promotion_run(text, text, uuid, numeric) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.approve_promotion_run(
+  p_run_id uuid
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_school_id uuid := user_school_id(auth.uid());
+  v_run public.promotion_runs%ROWTYPE;
+BEGIN
+  IF v_school_id IS NULL THEN
+    RAISE EXCEPTION 'No school is associated with the current user';
+  END IF;
+
+  SELECT * INTO v_run
+  FROM public.promotion_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+
+  IF v_run.id IS NULL THEN
+    RAISE EXCEPTION 'Promotion run not found';
+  END IF;
+
+  IF v_run.school_id <> v_school_id THEN
+    RAISE EXCEPTION 'You do not have access to this promotion run';
+  END IF;
+
+  IF v_run.status = 'cancelled' THEN
+    RAISE EXCEPTION 'This promotion run has already been cancelled';
+  END IF;
+
+  IF v_run.status = 'approved' THEN
+    RETURN v_run.id;
+  END IF;
+
+  UPDATE public.promotion_runs
+  SET status = 'approved', approved_by = auth.uid(), approved_at = now()
+  WHERE id = p_run_id;
+
+  RETURN p_run_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.approve_promotion_run(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.approve_promotion_run(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.apply_promotion_run(
+  p_run_id uuid
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_school_id uuid := user_school_id(auth.uid());
+  v_run public.promotion_runs%ROWTYPE;
+  v_updated integer := 0;
+  v_decision record;
+BEGIN
+  IF v_school_id IS NULL THEN
+    RAISE EXCEPTION 'No school is associated with the current user';
+  END IF;
+
+  SELECT * INTO v_run
+  FROM public.promotion_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+
+  IF v_run.id IS NULL THEN
+    RAISE EXCEPTION 'Promotion run not found';
+  END IF;
+
+  IF v_run.school_id <> v_school_id THEN
+    RAISE EXCEPTION 'You do not have access to this promotion run';
+  END IF;
+
+  IF v_run.status <> 'approved' THEN
+    RAISE EXCEPTION 'Only approved promotion runs can be applied';
+  END IF;
+
+  FOR v_decision IN
+    SELECT pd.student_id, pd.destination_class_id, pd.outcome
+    FROM public.promotion_decisions pd
+    WHERE pd.promotion_run_id = p_run_id
+      AND pd.school_id = v_school_id
+      AND pd.outcome IN ('promote', 'graduate')
+  LOOP
+    UPDATE public.students
+    SET class_id = COALESCE(v_decision.destination_class_id, class_id),
+        academic_year = v_run.target_academic_year,
+        status = CASE
+          WHEN v_decision.outcome = 'graduate' THEN 'graduated'
+          ELSE status
+        END
+    WHERE id = v_decision.student_id
+      AND school_id = v_school_id
+      AND status = 'active';
+
+    v_updated := v_updated + 1;
+  END LOOP;
+
+  RETURN v_updated;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.apply_promotion_run(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.apply_promotion_run(uuid) TO authenticated;

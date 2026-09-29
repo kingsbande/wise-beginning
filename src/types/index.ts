@@ -222,6 +222,21 @@ export interface FeeCategory {
   is_flexible: boolean
 }
 
+export interface FeeCategoryItem {
+  id: string
+  fee_category_id: string
+  name: string
+}
+
+export interface FeeCategoryItemCollection {
+  fee_category_item_id: string | null
+  item_name: string
+  is_collected: boolean
+  collected_at: string | null
+  updated_at: string
+  updated_by: string | null
+}
+
 export interface FeeStructure {
   id: string
   class_id: string
@@ -248,14 +263,19 @@ export interface FeePayment {
   payment_date: string
   method: string | null
   note: string | null
+  paid_for_items: string[]
   created_at: string
+  recorded_by?: string | null
+  posted_by_name?: string | null
 }
 
 // One row per category+term for a single student — used in the
 // admin "Record Payments" panel and the parent portal Fees tab.
 export interface StudentFeeSummaryRow {
   fee_charge_id: string
+  fee_category_id: string
   category_name: string
+  is_flexible: boolean
   term_name: string
   amount_due: number
   amount_paid: number

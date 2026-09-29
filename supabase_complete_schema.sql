@@ -145,6 +145,140 @@ ALTER TABLE public.fee_categories ALTER COLUMN created_at SET DEFAULT now();
 
 ALTER TABLE public.fee_categories ALTER COLUMN id SET DEFAULT gen_random_uuid();
 
+CREATE TABLE public.fee_category_items (
+    id uuid NOT NULL,
+    school_id uuid NOT NULL,
+    fee_category_id uuid NOT NULL,
+    name text NOT NULL,
+    created_at timestamp with time zone NOT NULL
+);
+
+ALTER TABLE public.fee_category_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY fee_category_items_admin_all
+    ON public.fee_category_items
+    AS PERMISSIVE
+    FOR ALL
+    TO public
+    USING (
+        school_id = user_school_id(auth.uid())
+        AND EXISTS (
+            SELECT 1
+            FROM fee_categories category
+            WHERE category.id = fee_category_items.fee_category_id
+              AND category.school_id = fee_category_items.school_id
+              AND category.is_flexible
+        )
+    )
+    WITH CHECK (
+        school_id = user_school_id(auth.uid())
+        AND EXISTS (
+            SELECT 1
+            FROM fee_categories category
+            WHERE category.id = fee_category_items.fee_category_id
+              AND category.school_id = fee_category_items.school_id
+              AND category.is_flexible
+        )
+    );
+
+ALTER TABLE public.fee_category_items ADD CONSTRAINT fee_category_items_pkey PRIMARY KEY (id);
+
+ALTER TABLE public.fee_category_items ADD CONSTRAINT fee_category_items_category_name_key UNIQUE (fee_category_id, name);
+
+ALTER TABLE public.fee_category_items ADD CONSTRAINT fee_category_items_school_id_fkey FOREIGN KEY (school_id) REFERENCES schools(id);
+
+ALTER TABLE public.fee_category_items ADD CONSTRAINT fee_category_items_fee_category_id_fkey FOREIGN KEY (fee_category_id) REFERENCES fee_categories(id) ON DELETE CASCADE;
+
+ALTER TABLE public.fee_category_items ALTER COLUMN created_at SET DEFAULT now();
+
+ALTER TABLE public.fee_category_items ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
+CREATE TABLE public.fee_category_item_collections (
+    id uuid NOT NULL,
+    school_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    fee_category_id uuid NOT NULL,
+    fee_category_item_id uuid,
+    term_id uuid NOT NULL,
+    item_name text NOT NULL,
+    is_collected boolean NOT NULL DEFAULT false,
+    collected_at timestamp with time zone,
+    updated_at timestamp with time zone NOT NULL,
+    updated_by uuid
+);
+
+ALTER TABLE public.fee_category_item_collections ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY fee_category_item_collections_admin_all
+    ON public.fee_category_item_collections
+    AS PERMISSIVE
+    FOR ALL
+    TO public
+    USING (
+        school_id = user_school_id(auth.uid())
+        AND EXISTS (
+            SELECT 1 FROM students student
+            WHERE student.id = fee_category_item_collections.student_id
+              AND student.school_id = fee_category_item_collections.school_id
+        )
+        AND EXISTS (
+            SELECT 1 FROM fee_categories category
+            WHERE category.id = fee_category_item_collections.fee_category_id
+              AND category.school_id = fee_category_item_collections.school_id
+              AND category.is_flexible
+        )
+        AND EXISTS (
+            SELECT 1 FROM terms term
+            WHERE term.id = fee_category_item_collections.term_id
+              AND term.school_id = fee_category_item_collections.school_id
+        )
+    )
+    WITH CHECK (
+        school_id = user_school_id(auth.uid())
+        AND EXISTS (
+            SELECT 1 FROM students student
+            WHERE student.id = fee_category_item_collections.student_id
+              AND student.school_id = fee_category_item_collections.school_id
+        )
+        AND EXISTS (
+            SELECT 1 FROM fee_categories category
+            WHERE category.id = fee_category_item_collections.fee_category_id
+              AND category.school_id = fee_category_item_collections.school_id
+              AND category.is_flexible
+        )
+        AND EXISTS (
+            SELECT 1 FROM fee_category_items item
+            WHERE item.id = fee_category_item_collections.fee_category_item_id
+              AND item.fee_category_id = fee_category_item_collections.fee_category_id
+              AND item.school_id = fee_category_item_collections.school_id
+        )
+        AND EXISTS (
+            SELECT 1 FROM terms term
+            WHERE term.id = fee_category_item_collections.term_id
+              AND term.school_id = fee_category_item_collections.school_id
+        )
+    );
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_pkey PRIMARY KEY (id);
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_student_item_term_key UNIQUE (student_id, fee_category_item_id, term_id);
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_school_id_fkey FOREIGN KEY (school_id) REFERENCES schools(id);
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE;
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_fee_category_id_fkey FOREIGN KEY (fee_category_id) REFERENCES fee_categories(id) ON DELETE CASCADE;
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_fee_category_item_id_fkey FOREIGN KEY (fee_category_item_id) REFERENCES fee_category_items(id) ON DELETE SET NULL;
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_term_id_fkey FOREIGN KEY (term_id) REFERENCES terms(id) ON DELETE CASCADE;
+
+ALTER TABLE public.fee_category_item_collections ADD CONSTRAINT fee_category_item_collections_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES profiles(id);
+
+ALTER TABLE public.fee_category_item_collections ALTER COLUMN updated_at SET DEFAULT now();
+
+ALTER TABLE public.fee_category_item_collections ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
 CREATE TABLE public.fee_charges (
     id uuid NOT NULL,
     school_id uuid NOT NULL,
@@ -226,6 +360,8 @@ ALTER TABLE public.fee_payments ALTER COLUMN created_at SET DEFAULT now();
 ALTER TABLE public.fee_payments ALTER COLUMN id SET DEFAULT gen_random_uuid();
 
 ALTER TABLE public.fee_payments ALTER COLUMN payment_date SET DEFAULT CURRENT_DATE;
+
+ALTER TABLE public.fee_payments ADD COLUMN paid_for_items text[] NOT NULL DEFAULT '{}'::text[];
 
 CREATE TABLE public.fee_structures (
     id uuid NOT NULL,

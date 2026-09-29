@@ -69,6 +69,24 @@ export async function createPromotionRun(params: {
   return data as string
 }
 
+export async function approvePromotionRun(runId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('approve_promotion_run', {
+    p_run_id: runId,
+  })
+
+  if (error) throw error
+  return data as string
+}
+
+export async function executePromotionRun(runId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('apply_promotion_run', {
+    p_run_id: runId,
+  })
+
+  if (error) throw error
+  return Number(data ?? 0)
+}
+
 export async function fetchPromotionDecisions(runId: string): Promise<PromotionDecision[]> {
   const { data: decisions, error: decisionsError } = await supabase
     .from('promotion_decisions')

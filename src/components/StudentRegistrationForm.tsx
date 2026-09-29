@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import { NewStudentInput } from '../types'
 import { getUserFriendlyError } from '../lib/errorMessages'
 import { logError } from '../lib/errorLogger'
+import { applyFeeStructuresToStudent } from '../lib/feesApi'
 
 const registrationSteps: Array<{ id: 'student' | 'parent' | 'details'; label: string }> = [
   { id: 'student', label: 'Student' },
@@ -150,6 +151,17 @@ export function StudentRegistrationForm({ onRegistered }: StudentRegistrationFor
       void logError(insertError, { type: 'student_registration' })
       setError(getUserFriendlyError(insertError, 'We could not register the student. Please check the details and try again.'))
       return
+    }
+
+    try {
+      await applyFeeStructuresToStudent({
+        studentId: inserted.id,
+        classId: form.class_id,
+        schoolId: profile.school_id,
+      })
+    } catch (chargeError) {
+      void logError(chargeError, { type: 'student_registration_charges' })
+      setError('The student was registered, but the configured fees could not be applied. Please try again from the Fees page.')
     }
 
     const className = classes.find((c) => c.id === form.class_id)?.name ?? ''

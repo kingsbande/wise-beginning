@@ -25,6 +25,16 @@ export async function toggleStaffAccountStatus(staffId: string, activate: boolea
   }
 }
 
+export async function updateStaffRole(staffId: string, role: 'teacher' | 'headteacher'): Promise<'teacher' | 'headteacher'> {
+  const { data, error } = await supabase.functions.invoke('update-staff-role', {
+    body: { staff_id: staffId, role },
+  })
+  if (error || data?.error) {
+    throw new Error(await getFunctionErrorMessage(error, data?.error, 'Could not update staff role'))
+  }
+  return data.role
+}
+
 export async function deleteStaffAccount(staffId: string): Promise<void> {
   const { data, error } = await supabase.functions.invoke('delete-staff-account', {
     body: { staff_id: staffId },

@@ -13,6 +13,7 @@ import {
   fetchTeacherDetails,
   removeTeacherAssignment,
   toggleStaffAccountStatus,
+  updateStaffRole,
   upsertTeacherDetails,
 } from '../../lib/staff/staffApi'
 import { TeacherDetails } from '../../types'
@@ -427,6 +428,18 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
     onError: (error) => setActionError(error instanceof Error ? error.message : 'Could not update staff account status.'),
   })
 
+  const roleMutation = useMutation({
+    mutationFn: ({ staffId, role }: { staffId: string; role: 'teacher' | 'headteacher' }) => updateStaffRole(staffId, role),
+    onSuccess: (confirmedRole, { staffId }) => {
+      setActionError(null)
+      queryClient.setQueryData<typeof staff>(['staff-list'], (current) =>
+        current?.map((member) => member.id === staffId ? { ...member, role: confirmedRole } : member),
+      )
+      void queryClient.invalidateQueries({ queryKey: ['staff-list'] })
+    },
+    onError: (error) => setActionError(error instanceof Error ? error.message : 'Could not update staff role.'),
+  })
+
   const filtered = staff.filter((s) => {
     if (statusFilter !== 'all' && (statusFilter === 'active') !== s.is_active) return false
 
@@ -501,6 +514,19 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
                   <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${s.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {s.is_active ? 'Active' : 'Inactive'}
                   </span>
+                  <select
+                    value={s.role}
+                    aria-label={`Change role for ${s.full_name}`}
+                    onChange={(event) => {
+                      setActionError(null)
+                      roleMutation.mutate({ staffId: s.id, role: event.target.value as 'teacher' | 'headteacher' })
+                    }}
+                    disabled={roleMutation.isPending}
+                    className="rounded-lg border border-gray-200 px-2 py-2 text-xs text-gray-700 focus:border-gray-900 focus:outline-none disabled:opacity-50 sm:py-1.5"
+                  >
+                    <option value="teacher">Teacher</option>
+                    <option value="headteacher">Headteacher</option>
+                  </select>
                   <button
                     type="button"
                     onClick={() => {

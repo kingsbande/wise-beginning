@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient'
 import { fetchStudentsPage } from './queries'
-import { FeeBalanceRow, FeeCategory, FeePayment, FeeStructure, StudentFeeSummaryRow } from '../types'
+import { FeeBalanceRow, FeeCategory, FeeCategoryItem, FeeCategoryItemCollection, FeePayment, FeeStructure, StudentFeeSummaryRow } from '../types'
 
 // ------------------------------------------------------------
 // Categories
@@ -14,10 +14,94 @@ export async function fetchFeeCategories(): Promise<FeeCategory[]> {
   return (data ?? []) as FeeCategory[]
 }
 
-export async function addFeeCategory(schoolId: string, name: string, isFlexible: boolean): Promise<void> {
-  const { error } = await supabase
+export async function addFeeCategory(schoolId: string, name: string, isFlexible: boolean): Promise<string> {
+  const { data, error } = await supabase
     .from('fee_categories')
     .insert({ school_id: schoolId, name, is_flexible: isFlexible })
+    .select('id')
+    .single()
+  if (error) throw error
+  return data.id
+}
+
+export async function fetchFeeCategoryItems(feeCategoryId?: string): Promise<FeeCategoryItem[]> {
+  let query = supabase
+    .from('fee_category_items')
+    .select('id, fee_category_id, name')
+    .order('name')
+  if (feeCategoryId) query = query.eq('fee_category_id', feeCategoryId)
+
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as FeeCategoryItem[]
+}
+
+export async function addFeeCategoryItem(schoolId: string, feeCategoryId: string, name: string): Promise<void> {
+  const { data: category, error: categoryError } = await supabase
+    .from('fee_categories')
+    .select('id')
+    .eq('id', feeCategoryId)
+    .eq('school_id', schoolId)
+    .eq('is_flexible', true)
+    .maybeSingle()
+  if (categoryError) throw categoryError
+  if (!category) throw new Error('Items can only be added to your school\'s flexible fee categories.')
+
+  const { error } = await supabase
+    .from('fee_category_items')
+    .insert({ school_id: schoolId, fee_category_id: feeCategoryId, name: name.trim() })
+  if (error) throw error
+}
+
+export async function deleteFeeCategoryItem(id: string): Promise<void> {
+  const { error } = await supabase.from('fee_category_items').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function fetchFeeCategoryItemCollections(params: {
+  studentId: string
+  feeCategoryId: string
+  termId: string
+}): Promise<FeeCategoryItemCollection[]> {
+  const { data, error } = await supabase
+    .from('fee_category_item_collections')
+    .select('fee_category_item_id, item_name, is_collected, collected_at, updated_at, updated_by')
+    .eq('student_id', params.studentId)
+    .eq('fee_category_id', params.feeCategoryId)
+    .eq('term_id', params.termId)
+
+  if (error) throw error
+  return (data ?? []) as FeeCategoryItemCollection[]
+}
+
+export async function setFeeCategoryItemCollected(params: {
+  schoolId: string
+  studentId: string
+  feeCategoryId: string
+  feeCategoryItemId: string
+  itemName: string
+  termId: string
+  isCollected: boolean
+  updatedBy: string
+}): Promise<void> {
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('fee_category_item_collections')
+    .upsert(
+      {
+        school_id: params.schoolId,
+        student_id: params.studentId,
+        fee_category_id: params.feeCategoryId,
+        fee_category_item_id: params.feeCategoryItemId,
+        item_name: params.itemName,
+        term_id: params.termId,
+        is_collected: params.isCollected,
+        collected_at: params.isCollected ? now : null,
+        updated_at: now,
+        updated_by: params.updatedBy,
+      },
+      { onConflict: 'student_id,fee_category_item_id,term_id' },
+    )
   if (error) throw error
 }
 
@@ -177,6 +261,7 @@ export async function recordFlexiblePayment(params: {
   termId: string
   totalDue?: number
   amount: number
+  feeCategoryItemIds?: string[]
   paymentDate: string
   method: string
   note: string
@@ -191,6 +276,21 @@ export async function recordFlexiblePayment(params: {
 
   if (categoryError) throw categoryError
   if (!category.is_flexible) throw new Error('Only flexible categories can be used for this payment.')
+
+  const { data: categoryItems, error: itemsError } = await supabase
+    .from('fee_category_items')
+    .select('id, name')
+    .eq('fee_category_id', params.feeCategoryId)
+  if (itemsError) throw itemsError
+
+  const selectedItemIds = [...new Set(params.feeCategoryItemIds ?? [])]
+  if (categoryItems.length > 0 && selectedItemIds.length === 0) {
+    throw new Error('Select at least one item this flexible payment is for.')
+  }
+  const selectedItems = (categoryItems ?? []).filter((item) => selectedItemIds.includes(item.id))
+  if (selectedItems.length !== selectedItemIds.length) {
+    throw new Error('One or more selected items do not belong to this fee category.')
+  }
 
   const { data: existingCharge, error: chargeLookupError } = await supabase
     .from('fee_charges')
@@ -239,6 +339,7 @@ export async function recordFlexiblePayment(params: {
     method: params.method,
     note: params.note,
     recordedBy: params.recordedBy,
+    paidForItems: selectedItems.map((item) => item.name),
   })
 
   const amountPaid = paidBefore + params.amount
@@ -246,7 +347,9 @@ export async function recordFlexiblePayment(params: {
     payment,
     charge: {
       fee_charge_id: charge.id,
+      fee_category_id: params.feeCategoryId,
       category_name: (charge.fee_categories as unknown as { name: string } | null)?.name ?? 'Unknown',
+      is_flexible: true,
       term_name: `${(charge.terms as unknown as { name: string; academic_year: string } | null)?.name ?? 'Term'} (${(charge.terms as unknown as { name: string; academic_year: string } | null)?.academic_year ?? ''})`,
       amount_due: Number(charge.amount_due),
       amount_paid: amountPaid,
@@ -273,7 +376,7 @@ async function getPaidAmount(feeChargeId: string): Promise<number> {
 export async function fetchStudentFeeSummary(studentId: string): Promise<StudentFeeSummaryRow[]> {
   const { data: charges, error } = await supabase
     .from('fee_charges')
-    .select('id, amount_due, fee_categories ( name ), terms ( name, academic_year )')
+    .select('id, amount_due, fee_categories ( id, name, is_flexible ), terms ( name, academic_year )')
     .eq('student_id', studentId)
 
   if (error) throw error
@@ -281,7 +384,7 @@ export async function fetchStudentFeeSummary(studentId: string): Promise<Student
   const rows = charges as unknown as Array<{
     id: string
     amount_due: number
-    fee_categories: { name: string } | null
+    fee_categories: { id: string; name: string; is_flexible: boolean } | null
     terms: { name: string; academic_year: string } | null
   }>
 
@@ -307,7 +410,9 @@ export async function fetchStudentFeeSummary(studentId: string): Promise<Student
     const paid = paidByCharge.get(r.id) ?? 0
     return {
       fee_charge_id: r.id,
+      fee_category_id: r.fee_categories?.id ?? '',
       category_name: r.fee_categories?.name ?? 'Unknown',
+      is_flexible: r.fee_categories?.is_flexible ?? false,
       term_name: `${r.terms?.name ?? 'Term'} (${r.terms?.academic_year ?? ''})`,
       amount_due: r.amount_due,
       amount_paid: paid,
@@ -319,12 +424,16 @@ export async function fetchStudentFeeSummary(studentId: string): Promise<Student
 export async function fetchPaymentHistory(feeChargeId: string): Promise<FeePayment[]> {
   const { data, error } = await supabase
     .from('fee_payments')
-    .select('id, fee_charge_id, amount, payment_date, method, note, created_at')
+    .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at, recorded_by, recorder:profiles!fee_payments_recorded_by_fkey(full_name)')
     .eq('fee_charge_id', feeChargeId)
     .order('payment_date', { ascending: false })
 
   if (error) throw error
-  return (data ?? []) as FeePayment[]
+  const rows = (data ?? []) as unknown as Array<FeePayment & { recorder: { full_name: string } | null }>
+  return rows.map(({ recorder, ...payment }) => ({
+    ...payment,
+    posted_by_name: recorder?.full_name ?? null,
+  }))
 }
 
 export async function recordPayment(params: {
@@ -335,6 +444,7 @@ export async function recordPayment(params: {
   method: string
   note: string
   recordedBy: string
+  paidForItems?: string[]
 }): Promise<FeePayment> {
   const { data, error } = await supabase
     .from('fee_payments')
@@ -346,8 +456,9 @@ export async function recordPayment(params: {
       method: params.method || null,
       note: params.note || null,
       recorded_by: params.recordedBy,
+      ...(params.paidForItems ? { paid_for_items: params.paidForItems } : {}),
     })
-    .select('id, fee_charge_id, amount, payment_date, method, note, created_at')
+    .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at')
     .single()
   if (error) throw error
   return data as FeePayment
@@ -360,12 +471,13 @@ export async function updatePayment(params: {
   paymentDate: string
   method: string
   note: string
+  paidForItems?: string[]
 }): Promise<FeePayment> {
   if (params.amount <= 0) throw new Error('Payment amount must be greater than zero.')
 
   const { data: charge, error: chargeError } = await supabase
     .from('fee_charges')
-    .select('amount_due')
+    .select('amount_due, fee_category_id, fee_categories ( is_flexible )')
     .eq('id', params.feeChargeId)
     .single()
   if (chargeError) throw chargeError
@@ -383,6 +495,29 @@ export async function updatePayment(params: {
     throw new Error('The corrected payment would exceed the charge balance.')
   }
 
+  let paidForItems: string[] | undefined
+  if (params.paidForItems !== undefined) {
+    const category = charge.fee_categories as unknown as { is_flexible: boolean } | null
+    if (!category?.is_flexible) throw new Error('Items can only be assigned to flexible fee payments.')
+
+    const selectedItems = [...new Set(params.paidForItems.map((item) => item.trim()).filter(Boolean))]
+    const [{ data: categoryItems, error: itemsError }, { data: existingPayment, error: paymentError }] = await Promise.all([
+      supabase.from('fee_category_items').select('name').eq('fee_category_id', charge.fee_category_id),
+      supabase.from('fee_payments').select('paid_for_items').eq('id', params.paymentId).eq('fee_charge_id', params.feeChargeId).single(),
+    ])
+    if (itemsError) throw itemsError
+    if (paymentError) throw paymentError
+
+    const allowedNames = new Set([
+      ...(categoryItems ?? []).map((item) => item.name),
+      ...((existingPayment.paid_for_items as string[] | null) ?? []),
+    ])
+    if (selectedItems.some((item) => !allowedNames.has(item))) {
+      throw new Error('One or more selected items do not belong to this fee category.')
+    }
+    paidForItems = selectedItems
+  }
+
   const { data, error } = await supabase
     .from('fee_payments')
     .update({
@@ -390,10 +525,11 @@ export async function updatePayment(params: {
       payment_date: params.paymentDate,
       method: params.method || null,
       note: params.note || null,
+      ...(paidForItems !== undefined ? { paid_for_items: paidForItems } : {}),
     })
     .eq('id', params.paymentId)
     .eq('fee_charge_id', params.feeChargeId)
-    .select('id, fee_charge_id, amount, payment_date, method, note, created_at')
+    .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at')
     .single()
 
   if (error) throw error

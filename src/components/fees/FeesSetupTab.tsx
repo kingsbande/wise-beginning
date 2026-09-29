@@ -5,8 +5,11 @@ import { fetchClasses } from '../../lib/queries'
 import { fetchTerms } from '../../lib/gradesApi'
 import {
   addFeeCategory,
+  addFeeCategoryItem,
   deleteFeeCategory,
+  deleteFeeCategoryItem,
   fetchFeeCategories,
+  fetchFeeCategoryItems,
   fetchFeeStructures,
   generateChargesFromStructure,
   upsertFeeStructure,
@@ -17,12 +20,15 @@ export function FeesSetupTab() {
   const queryClient = useQueryClient()
 
   const { data: categories = [] } = useQuery({ queryKey: ['fee-categories'], queryFn: fetchFeeCategories })
+  const { data: categoryItems = [] } = useQuery({ queryKey: ['fee-category-items'], queryFn: () => fetchFeeCategoryItems() })
   const { data: classes = [] } = useQuery({ queryKey: ['classes'], queryFn: fetchClasses })
   const { data: terms = [] } = useQuery({ queryKey: ['terms'], queryFn: fetchTerms })
   const { data: structures = [] } = useQuery({ queryKey: ['fee-structures'], queryFn: fetchFeeStructures })
 
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryFlexible, setNewCategoryFlexible] = useState(false)
+  const [editingItemsCategoryId, setEditingItemsCategoryId] = useState<string | null>(null)
+  const [newItemName, setNewItemName] = useState('')
   const [structureClassId, setStructureClassId] = useState('')
   const [structureCategoryId, setStructureCategoryId] = useState('')
   const [structureTermId, setStructureTermId] = useState('')
@@ -43,6 +49,20 @@ export function FeesSetupTab() {
   const deleteCategoryMutation = useMutation({
     mutationFn: deleteFeeCategory,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fee-categories'] }),
+  })
+
+  const addCategoryItemMutation = useMutation({
+    mutationFn: ({ categoryId, name }: { categoryId: string; name: string }) =>
+      addFeeCategoryItem(profile!.school_id, categoryId, name),
+    onSuccess: () => {
+      setNewItemName('')
+      queryClient.invalidateQueries({ queryKey: ['fee-category-items'] })
+    },
+  })
+
+  const deleteCategoryItemMutation = useMutation({
+    mutationFn: deleteFeeCategoryItem,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['fee-category-items'] }),
   })
 
   const saveStructureMutation = useMutation({
@@ -121,17 +141,77 @@ export function FeesSetupTab() {
 
         <ul className="mt-3 divide-y divide-gray-100">
           {categories.map((c) => (
-            <li key={c.id} className="flex items-center justify-between py-2 text-sm">
-              <span>
-                {c.name}
-                {c.is_flexible && <span className="ml-2 text-xs text-blue-600">Flexible</span>}
-              </span>
-              <button
-                onClick={() => deleteCategoryMutation.mutate(c.id)}
-                className="text-xs font-medium text-red-600 underline hover:text-red-800"
-              >
-                Remove
-              </button>
+            <li key={c.id} className="py-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  {c.name}
+                  {c.is_flexible && <span className="ml-2 text-xs text-blue-600">Flexible</span>}
+                </span>
+                <div className="flex shrink-0 items-center gap-3">
+                  {c.is_flexible && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingItemsCategoryId(editingItemsCategoryId === c.id ? null : c.id)
+                        setNewItemName('')
+                      }}
+                      className="text-xs font-medium text-blue-700 underline hover:text-blue-900"
+                    >
+                      {editingItemsCategoryId === c.id ? 'Done' : 'Manage items'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => deleteCategoryMutation.mutate(c.id)}
+                    className="text-xs font-medium text-red-600 underline hover:text-red-800"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+              {c.is_flexible && editingItemsCategoryId === c.id && (
+                <div className="mt-2 rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs text-gray-600">Add the selectable items included in this flexible fee.</p>
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      if (newItemName.trim()) addCategoryItemMutation.mutate({ categoryId: c.id, name: newItemName.trim() })
+                    }}
+                    className="mt-2 flex gap-2"
+                  >
+                    <input
+                      value={newItemName}
+                      onChange={(event) => setNewItemName(event.target.value)}
+                      placeholder="e.g. Socks"
+                      maxLength={100}
+                      className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newItemName.trim() || addCategoryItemMutation.isPending}
+                      className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      Add item
+                    </button>
+                  </form>
+                  {addCategoryItemMutation.isError && <p role="alert" className="mt-2 text-xs text-red-600">Could not add this item. It may already exist.</p>}
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {categoryItems.filter((item) => item.fee_category_id === c.id).map((item) => (
+                      <li key={item.id} className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700">
+                        {item.name}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${item.name}`}
+                          onClick={() => deleteCategoryItemMutation.mutate(item.id)}
+                          className="font-semibold text-red-600 hover:text-red-800"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </li>
           ))}
         </ul>

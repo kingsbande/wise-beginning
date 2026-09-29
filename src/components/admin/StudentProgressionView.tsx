@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Clock3, GraduationCap, Play, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
+  approvePromotionRun,
   createPromotionRun,
+  executePromotionRun,
   fetchProgressionTerms,
   fetchPromotionDecisions,
   fetchPromotionRuns,
@@ -64,9 +66,32 @@ export function StudentProgressionView() {
     },
   })
 
+  const approveMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedRunId) throw new Error('Select a promotion run to approve.')
+      return approvePromotionRun(selectedRunId)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['promotion-runs'] })
+      void queryClient.invalidateQueries({ queryKey: ['promotion-decisions', selectedRunId!] })
+    },
+  })
+
+  const executeMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedRunId) throw new Error('Select a promotion run to apply.')
+      return executePromotionRun(selectedRunId)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['promotion-runs'] })
+      void queryClient.invalidateQueries({ queryKey: ['promotion-decisions', selectedRunId!] })
+    },
+  })
+
   const terms = termsQuery.data ?? []
   const sourceYears = [...new Set(terms.map((term) => term.academic_year))]
   const sourceTerms = terms.filter((term) => term.academic_year === sourceYear)
+  const selectedRun = (runsQuery.data ?? []).find((run) => run.id === selectedRunId) ?? null
   const decisions = decisionsQuery.data ?? []
   const counts = decisions.reduce<Record<PromotionOutcome, number>>(
     (result, decision) => ({ ...result, [decision.outcome]: result[decision.outcome] + 1 }),
@@ -139,7 +164,7 @@ export function StudentProgressionView() {
         {runMutation.error && <p className="mt-3 text-sm text-rose-600">{(runMutation.error as Error).message}</p>}
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
-          <span>Calculation creates a review run only. It does not change student classes or academic records.</span>
+          <span>Calculation creates a review run. The next step is approval, and only a later approved execution can update student class records.</span>
         </div>
       </div>
 
@@ -166,6 +191,32 @@ export function StudentProgressionView() {
             <div className="flex min-h-48 items-center justify-center text-center text-sm text-slate-500">Select a run to review student recommendations.</div>
           ) : (
             <>
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Run status</p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">{selectedRun?.status ?? 'review'}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => approveMutation.mutate()}
+                    disabled={!selectedRun || selectedRun.status !== 'review' || approveMutation.isPending}
+                    className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {approveMutation.isPending ? 'Approving...' : 'Approve run'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeMutation.mutate()}
+                    disabled={!selectedRun || selectedRun.status !== 'approved' || executeMutation.isPending}
+                    className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {executeMutation.isPending ? 'Applying...' : 'Apply approved decisions'}
+                  </button>
+                </div>
+              </div>
+              {approveMutation.error && <p className="mb-3 text-sm text-rose-600">{(approveMutation.error as Error).message}</p>}
+              {executeMutation.error && <p className="mb-3 text-sm text-rose-600">{(executeMutation.error as Error).message}</p>}
               <div className="grid gap-3 sm:grid-cols-4">
                 <Summary label="Promote" value={counts.promote} tone="emerald" />
                 <Summary label="Retain" value={counts.retain} tone="amber" />

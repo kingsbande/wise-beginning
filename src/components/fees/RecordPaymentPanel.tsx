@@ -7,10 +7,13 @@ import { fetchTerms } from '../../lib/gradesApi'
 import {
   adjustChargeAmount,
   fetchFeeCategories,
+  fetchFeeCategoryItemCollections,
+  fetchFeeCategoryItems,
   fetchPaymentHistory,
   fetchStudentFeeSummary,
   recordFlexiblePayment,
   recordPayment,
+  setFeeCategoryItemCollected,
   updatePayment,
 } from '../../lib/feesApi'
 import { getUserFriendlyError } from '../../lib/errorMessages'
@@ -20,15 +23,20 @@ import { generatePaymentReceiptPdf, PaymentReceiptParams } from '../../lib/pdf'
 export function RecordPaymentPanel() {
   const { profile } = useAuth()
   const queryClient = useQueryClient()
+  const [activeView, setActiveView] = useState<'payments' | 'collection'>('payments')
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search, 250)
   const [selectedStudent, setSelectedStudent] = useState<StudentPickerRow | null>(null)
   const [payingChargeId, setPayingChargeId] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
   const [flexibleCategoryId, setFlexibleCategoryId] = useState('')
+  const [flexibleItemIds, setFlexibleItemIds] = useState<string[]>([])
   const [flexibleTermId, setFlexibleTermId] = useState('')
   const [flexibleTotalDue, setFlexibleTotalDue] = useState('')
   const [flexibleAmount, setFlexibleAmount] = useState('')
+  const [collectionCategoryId, setCollectionCategoryId] = useState('')
+  const [collectionTermId, setCollectionTermId] = useState('')
+  const [collectionError, setCollectionError] = useState<string | null>(null)
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [method, setMethod] = useState('')
   const [note, setNote] = useState('')
@@ -42,6 +50,7 @@ export function RecordPaymentPanel() {
   const [editPaymentDate, setEditPaymentDate] = useState('')
   const [editPaymentMethod, setEditPaymentMethod] = useState('')
   const [editPaymentNote, setEditPaymentNote] = useState('')
+  const [editPaymentItems, setEditPaymentItems] = useState<string[]>([])
 
   const { data: students = [] } = useQuery({
     queryKey: ['fee-student-picker', debouncedSearch],
@@ -55,9 +64,23 @@ export function RecordPaymentPanel() {
     enabled: !!selectedStudent,
   })
 
+  const editingCharge = summary.find((row) => row.fee_charge_id === expandedHistoryId)
+
   const { data: flexibleCategories = [] } = useQuery({
     queryKey: ['fee-categories'],
     queryFn: fetchFeeCategories,
+  })
+
+  const { data: flexibleCategoryItems = [] } = useQuery({
+    queryKey: ['fee-category-items', flexibleCategoryId],
+    queryFn: () => fetchFeeCategoryItems(flexibleCategoryId),
+    enabled: !!flexibleCategoryId,
+  })
+
+  const { data: collectionItems = [] } = useQuery({
+    queryKey: ['fee-category-items-collection', collectionCategoryId],
+    queryFn: () => fetchFeeCategoryItems(collectionCategoryId),
+    enabled: !!collectionCategoryId,
   })
 
   const { data: terms = [] } = useQuery({
@@ -69,6 +92,23 @@ export function RecordPaymentPanel() {
     queryKey: ['fee-payment-history', expandedHistoryId],
     queryFn: () => fetchPaymentHistory(expandedHistoryId!),
     enabled: !!expandedHistoryId,
+  })
+
+  const { data: editingCategoryItems = [] } = useQuery({
+    queryKey: ['fee-category-items-edit', editingCharge?.fee_category_id],
+    queryFn: () => fetchFeeCategoryItems(editingCharge!.fee_category_id),
+    enabled: !!editingPaymentId && !!editingCharge?.is_flexible,
+  })
+
+  const collectionQueryKey = ['fee-item-collections', selectedStudent?.id, collectionCategoryId, collectionTermId]
+  const { data: itemCollections = [], isLoading: collectionsLoading } = useQuery({
+    queryKey: collectionQueryKey,
+    queryFn: () => fetchFeeCategoryItemCollections({
+      studentId: selectedStudent!.id,
+      feeCategoryId: collectionCategoryId,
+      termId: collectionTermId,
+    }),
+    enabled: !!selectedStudent && !!collectionCategoryId && !!collectionTermId,
   })
 
   const paymentMutation = useMutation({
@@ -134,6 +174,7 @@ export function RecordPaymentPanel() {
         termId: flexibleTermId,
         totalDue: numericTotalDue > 0 ? numericTotalDue : undefined,
         amount: numericAmount,
+        feeCategoryItemIds: flexibleItemIds,
         paymentDate,
         method,
         note,
@@ -155,13 +196,14 @@ export function RecordPaymentPanel() {
         balance: charge.balance,
         paymentDate: payment.payment_date,
         method: payment.method,
-        note: payment.note,
+        note: [payment.note, payment.paid_for_items.length ? `Items: ${payment.paid_for_items.join(', ')}` : ''].filter(Boolean).join(' | '),
       }
       setLastReceipt(receipt)
       await generatePaymentReceiptPdf(receipt)
       queryClient.invalidateQueries({ queryKey: ['student-fee-summary', selectedStudent?.id] })
       queryClient.invalidateQueries({ queryKey: ['fee-payment-history'] })
       setFlexibleCategoryId('')
+      setFlexibleItemIds([])
       setFlexibleTermId('')
       setFlexibleTotalDue('')
       setFlexibleAmount('')
@@ -195,14 +237,47 @@ export function RecordPaymentPanel() {
       paymentDate: editPaymentDate,
       method: editPaymentMethod,
       note: editPaymentNote,
+      paidForItems: editingCharge?.is_flexible ? editPaymentItems : undefined,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['student-fee-summary', selectedStudent?.id] })
       queryClient.invalidateQueries({ queryKey: ['fee-payment-history', expandedHistoryId] })
       setEditingPaymentId(null)
+      setEditPaymentItems([])
     },
     onError: (err: Error) => setError(err.message || 'The payment could not be updated.'),
   })
+
+  const collectionMutation = useMutation({
+    mutationFn: ({ itemId, itemName, isCollected }: { itemId: string; itemName: string; isCollected: boolean }) =>
+      setFeeCategoryItemCollected({
+        schoolId: profile!.school_id,
+        studentId: selectedStudent!.id,
+        feeCategoryId: collectionCategoryId,
+        feeCategoryItemId: itemId,
+        itemName,
+        termId: collectionTermId,
+        isCollected,
+        updatedBy: profile!.id,
+      }),
+    onSuccess: () => {
+      setCollectionError(null)
+      void queryClient.invalidateQueries({ queryKey: collectionQueryKey })
+    },
+    onError: (err: Error) => setCollectionError(err.message || 'Could not update collection status.'),
+  })
+
+  const collectionByItemId = new Map(
+    itemCollections
+      .filter((collection) => collection.fee_category_item_id)
+      .map((collection) => [collection.fee_category_item_id!, collection]),
+  )
+  const collectedItems = collectionItems.filter((item) => collectionByItemId.get(item.id)?.is_collected)
+  const remainingItems = collectionItems.filter((item) => !collectionByItemId.get(item.id)?.is_collected)
+  const archivedCollectedItems = itemCollections.filter(
+    (collection) => collection.is_collected && !collection.fee_category_item_id,
+  )
+  const hasFlexibleCategories = flexibleCategories.some((category) => category.is_flexible)
 
   if (!selectedStudent) {
     return (
@@ -240,7 +315,7 @@ export function RecordPaymentPanel() {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold text-gray-900">{selectedStudent.full_name}</h3>
@@ -249,15 +324,56 @@ export function RecordPaymentPanel() {
           </p>
         </div>
         <button
-          onClick={() => setSelectedStudent(null)}
+          type="button"
+          aria-label="Choose a different student"
+          onClick={() => {
+            setSelectedStudent(null)
+            setActiveView('payments')
+            setLastReceipt(null)
+            setExpandedHistoryId(null)
+            setEditingPaymentId(null)
+            setError(null)
+            setCollectionError(null)
+          }}
           className="text-xs font-medium text-gray-500 underline hover:text-gray-900"
         >
           Change Student
         </button>
       </div>
 
-      <div className="mt-4">
-        {lastReceipt && (
+      <div role="tablist" aria-label="Student fee tasks" className="mt-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+        <button
+          type="button"
+          role="tab"
+          id="student-payments-tab"
+          aria-controls="student-fee-task-panel"
+          aria-selected={activeView === 'payments'}
+          onClick={() => setActiveView('payments')}
+          className={`rounded-md px-3 py-2 text-sm font-medium ${activeView === 'payments' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+        >
+          Payments
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="student-collection-tab"
+          aria-controls="student-fee-task-panel"
+          aria-selected={activeView === 'collection'}
+          onClick={() => setActiveView('collection')}
+          disabled={!hasFlexibleCategories}
+          className={`rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 ${activeView === 'collection' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+        >
+          Item collection
+        </button>
+      </div>
+
+      <div
+        id="student-fee-task-panel"
+        role="tabpanel"
+        aria-labelledby={activeView === 'payments' ? 'student-payments-tab' : 'student-collection-tab'}
+        className="mt-4"
+      >
+        {activeView === 'payments' && lastReceipt && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
             <p className="text-xs text-green-800">Payment recorded. Receipt downloaded successfully.</p>
             <button
@@ -269,14 +385,17 @@ export function RecordPaymentPanel() {
             </button>
           </div>
         )}
-        {flexibleCategories.some((category) => category.is_flexible) && (
+        {activeView === 'payments' && flexibleCategories.some((category) => category.is_flexible) && (
           <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
             <p className="text-sm font-medium text-gray-900">Record Flexible Fee</p>
             <p className="mt-1 text-xs text-gray-600">This fee applies only to this student and term.</p>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
               <select
                 value={flexibleCategoryId}
-                onChange={(e) => setFlexibleCategoryId(e.target.value)}
+                onChange={(e) => {
+                  setFlexibleCategoryId(e.target.value)
+                  setFlexibleItemIds([])
+                }}
                 className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
               >
                 <option value="">Category</option>
@@ -318,12 +437,34 @@ export function RecordPaymentPanel() {
               />
               <button
                 onClick={() => flexiblePaymentMutation.mutate()}
-                disabled={flexiblePaymentMutation.isPending}
+                disabled={flexiblePaymentMutation.isPending || (flexibleCategoryItems.length > 0 && flexibleItemIds.length === 0)}
                 className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50"
               >
                 {flexiblePaymentMutation.isPending ? 'Saving...' : 'Record Flexible Payment'}
               </button>
             </div>
+            {flexibleCategoryId && flexibleCategoryItems.length > 0 && (
+              <fieldset className="mt-3 rounded-lg border border-blue-100 bg-white p-3">
+                <legend className="px-1 text-xs font-medium text-gray-700">Items this payment is for</legend>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {flexibleCategoryItems.map((item) => (
+                    <label key={item.id} className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={flexibleItemIds.includes(item.id)}
+                        onChange={(event) => setFlexibleItemIds((current) =>
+                          event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id),
+                        )}
+                      />
+                      {item.name}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {flexibleCategoryId && flexibleCategoryItems.length === 0 && (
+              <p className="mt-2 text-xs text-gray-600">No items are set up for this category yet. You can still record the payment.</p>
+            )}
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <input
                 value={method}
@@ -341,7 +482,125 @@ export function RecordPaymentPanel() {
             {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
           </div>
         )}
-        {summaryLoading ? (
+        {activeView === 'collection' && flexibleCategories.some((category) => category.is_flexible) && (
+          <section className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Item collection</h4>
+                <p className="mt-1 text-xs text-gray-500">Track what this student has collected. This does not change payments or balances.</p>
+              </div>
+              {collectionCategoryId && collectionTermId && (
+                <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                  {remainingItems.length} remaining
+                </span>
+              )}
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <label className="text-xs font-medium text-gray-700">
+                Flexible category
+                <select
+                  value={collectionCategoryId}
+                  onChange={(event) => {
+                    setCollectionCategoryId(event.target.value)
+                    setCollectionError(null)
+                  }}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm font-normal focus:border-gray-900 focus:outline-none"
+                >
+                  <option value="">Select category</option>
+                  {flexibleCategories.filter((category) => category.is_flexible).map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-gray-700">
+                Term
+                <select
+                  value={collectionTermId}
+                  onChange={(event) => {
+                    setCollectionTermId(event.target.value)
+                    setCollectionError(null)
+                  }}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm font-normal focus:border-gray-900 focus:outline-none"
+                >
+                  <option value="">Select term</option>
+                  {terms.map((term) => (
+                    <option key={term.id} value={term.id}>{term.name} — {term.academic_year}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {collectionError && <p role="alert" className="mt-3 text-xs text-red-600">{collectionError}</p>}
+            {collectionCategoryId && collectionTermId && (
+              collectionsLoading ? (
+                <p className="mt-4 text-sm text-gray-500">Loading collection status...</p>
+              ) : collectionItems.length === 0 ? (
+                <p className="mt-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">No items are set up for this category yet.</p>
+              ) : (
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <h5 className="text-xs font-semibold uppercase text-amber-800">Not collected ({remainingItems.length})</h5>
+                    {remainingItems.length === 0 ? (
+                      <p className="mt-2 text-sm text-gray-500">All listed items have been collected.</p>
+                    ) : (
+                      <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100">
+                        {remainingItems.map((item) => (
+                          <li key={item.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                            <span className="text-sm text-gray-800">{item.name}</span>
+                            <button
+                              type="button"
+                              disabled={collectionMutation.isPending}
+                              onClick={() => collectionMutation.mutate({ itemId: item.id, itemName: item.name, isCollected: true })}
+                              className="shrink-0 rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                            >
+                              Mark collected
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-semibold uppercase text-emerald-800">Collected ({collectedItems.length + archivedCollectedItems.length})</h5>
+                    {collectedItems.length === 0 && archivedCollectedItems.length === 0 ? (
+                      <p className="mt-2 text-sm text-gray-500">No items collected yet.</p>
+                    ) : (
+                      <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100">
+                        {collectedItems.map((item) => {
+                          const collection = collectionByItemId.get(item.id)!
+                          return (
+                            <li key={item.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                              <div>
+                                <p className="text-sm font-medium text-gray-800">{item.name}</p>
+                                <p className="mt-0.5 text-xs text-gray-500">
+                                  Collected {collection.collected_at ? new Date(collection.collected_at).toLocaleString() : ''}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={collectionMutation.isPending}
+                                onClick={() => collectionMutation.mutate({ itemId: item.id, itemName: item.name, isCollected: false })}
+                                className="shrink-0 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                Undo
+                              </button>
+                            </li>
+                          )
+                        })}
+                        {archivedCollectedItems.map((collection) => (
+                          <li key={`${collection.item_name}-${collection.updated_at}`} className="px-3 py-2.5">
+                            <p className="text-sm font-medium text-gray-800">{collection.item_name}</p>
+                            <p className="mt-0.5 text-xs text-gray-500">Collected item removed from the active list</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )
+            )}
+          </section>
+        )}
+        {activeView === 'payments' && (summaryLoading ? (
           <p className="text-sm text-gray-500">Loading...</p>
         ) : summary.length === 0 ? (
           <p className="text-sm text-gray-500">
@@ -364,7 +623,7 @@ export function RecordPaymentPanel() {
                       </span>
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() =>
                         setPayingChargeId(payingChargeId === row.fee_charge_id ? null : row.fee_charge_id)
@@ -471,15 +730,49 @@ export function RecordPaymentPanel() {
                                 <input type="date" value={editPaymentDate} onChange={(e) => setEditPaymentDate(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-xs" />
                                 <input value={editPaymentMethod} onChange={(e) => setEditPaymentMethod(e.target.value)} placeholder="Method" className="rounded border border-gray-300 px-2 py-1 text-xs" />
                                 <input value={editPaymentNote} onChange={(e) => setEditPaymentNote(e.target.value)} placeholder="Note" className="rounded border border-gray-300 px-2 py-1 text-xs" />
+                                {editingCharge?.is_flexible && (
+                                  <fieldset className="rounded border border-gray-200 bg-white p-2 sm:col-span-4">
+                                    <legend className="px-1 text-xs font-medium text-gray-700">Items this payment is for</legend>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                      {Array.from(new Set([...editingCategoryItems.map((item) => item.name), ...editPaymentItems])).map((itemName) => (
+                                        <label key={itemName} className="flex items-center gap-2 text-xs text-gray-700">
+                                          <input
+                                            type="checkbox"
+                                            checked={editPaymentItems.includes(itemName)}
+                                            onChange={(event) => setEditPaymentItems((current) =>
+                                              event.target.checked ? [...current, itemName] : current.filter((name) => name !== itemName),
+                                            )}
+                                          />
+                                          {itemName}
+                                        </label>
+                                      ))}
+                                      {editingCategoryItems.length === 0 && editPaymentItems.length === 0 && (
+                                        <span className="text-xs text-gray-500">No items are currently set up for this category.</span>
+                                      )}
+                                    </div>
+                                  </fieldset>
+                                )}
                                 <div className="flex gap-2 sm:col-span-4">
                                   <button type="button" onClick={() => updatePaymentMutation.mutate()} disabled={updatePaymentMutation.isPending} className="rounded bg-gray-900 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50">{updatePaymentMutation.isPending ? 'Saving...' : 'Save'}</button>
-                                  <button type="button" onClick={() => setEditingPaymentId(null)} className="rounded border border-gray-300 px-2.5 py-1 text-xs">Cancel</button>
+                                  <button type="button" onClick={() => { setEditingPaymentId(null); setEditPaymentItems([]); setError(null) }} className="rounded border border-gray-300 px-2.5 py-1 text-xs">Cancel</button>
                                 </div>
+                                {error && <p role="alert" className="text-xs text-red-600 sm:col-span-4">{error}</p>}
                               </div>
                             ) : (
                               <div className="flex items-center justify-between gap-2">
-                                <span>{p.payment_date} — {p.amount.toLocaleString()}{p.method ? ` (${p.method})` : ''}{p.note ? ` — ${p.note}` : ''}</span>
-                                <button type="button" onClick={() => { setEditingPaymentId(p.id); setEditPaymentAmount(String(p.amount)); setEditPaymentDate(p.payment_date); setEditPaymentMethod(p.method ?? ''); setEditPaymentNote(p.note ?? ''); setError(null) }} className="shrink-0 font-medium text-blue-600 underline hover:text-blue-800">Edit</button>
+                                <div className="min-w-0">
+                                  <p className="text-gray-800">
+                                    Payment date: {p.payment_date} · Amount: {p.amount.toLocaleString()}{p.method ? ` · ${p.method}` : ''}
+                                  </p>
+                                  <p className="mt-1 text-gray-500">
+                                    Posted on: {new Date(p.created_at).toLocaleString()} · By: {p.posted_by_name ?? 'User unavailable'}
+                                  </p>
+                                  {p.paid_for_items.length > 0 && (
+                                    <p className="mt-1 text-gray-600">Paid for: {p.paid_for_items.join(', ')}</p>
+                                  )}
+                                  {p.note && <p className="mt-1 text-gray-500">Note: {p.note}</p>}
+                                </div>
+                                <button type="button" onClick={() => { setEditingPaymentId(p.id); setEditPaymentAmount(String(p.amount)); setEditPaymentDate(p.payment_date); setEditPaymentMethod(p.method ?? ''); setEditPaymentNote(p.note ?? ''); setEditPaymentItems(p.paid_for_items ?? []); setError(null) }} className="shrink-0 font-medium text-blue-600 underline hover:text-blue-800">Edit</button>
                               </div>
                             )}
                           </li>
@@ -491,7 +784,7 @@ export function RecordPaymentPanel() {
               </div>
             ))}
           </div>
-        )}
+        ))}
       </div>
     </div>
   )
