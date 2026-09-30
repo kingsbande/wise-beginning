@@ -269,6 +269,22 @@ export interface FeePayment {
   posted_by_name?: string | null
 }
 
+export interface FeeBalanceDetailRow {
+  fee_charge_id: string
+  fee_category_id: string
+  category_name: string
+  is_flexible: boolean
+  amount_due: number
+  amount_paid: number
+  balance: number
+  payments: FeePayment[]
+  items: Array<{
+    item_name: string
+    is_collected: boolean
+    collected_at: string | null
+  }>
+}
+
 // One row per category+term for a single student — used in the
 // admin "Record Payments" panel and the parent portal Fees tab.
 export interface StudentFeeSummaryRow {

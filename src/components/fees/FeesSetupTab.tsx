@@ -108,7 +108,7 @@ export function FeesSetupTab() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-gray-200 bg-white p-6">
+      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
         <h3 className="text-base font-semibold text-gray-900">Fee Categories</h3>
         <p className="mt-1 text-sm text-gray-500">
           School Fees, Uniform Fees, and Books Fees are set up by default — add any others your
@@ -120,7 +120,7 @@ export function FeesSetupTab() {
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             placeholder="e.g. Transport Fees"
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
+            className="w-full min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none sm:w-auto"
           />
           <button
             type="submit"
@@ -129,7 +129,7 @@ export function FeesSetupTab() {
           >
             Add
           </button>
-          <label className="flex items-center gap-2 text-xs text-gray-600">
+          <label className="flex basis-full items-center gap-2 text-xs text-gray-600 sm:basis-auto">
             <input
               type="checkbox"
               checked={newCategoryFlexible}
@@ -142,8 +142,8 @@ export function FeesSetupTab() {
         <ul className="mt-3 divide-y divide-gray-100">
           {categories.map((c) => (
             <li key={c.id} className="py-2 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span>
+              <div className="flex flex-wrap items-center justify-between gap-2 sm:flex-nowrap sm:gap-3">
+                <span className="min-w-0 flex-1 break-words">
                   {c.name}
                   {c.is_flexible && <span className="ml-2 text-xs text-blue-600">Flexible</span>}
                 </span>
@@ -217,7 +217,7 @@ export function FeesSetupTab() {
         </ul>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-6">
+      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
         <h3 className="text-base font-semibold text-gray-900">Fee Structures</h3>
         <p className="mt-1 text-sm text-gray-500">
           Set the standard amount for a class + category + term, then generate it to every student
@@ -225,11 +225,11 @@ export function FeesSetupTab() {
           standard rate.
         </p>
 
-        <form onSubmit={handleSaveStructure} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
+        <form onSubmit={handleSaveStructure} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <select
             value={structureClassId}
             onChange={(e) => setStructureClassId(e.target.value)}
-            className="rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
+            className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
           >
             <option value="">Class</option>
             {classes.map((c) => (
@@ -241,7 +241,7 @@ export function FeesSetupTab() {
           <select
             value={structureCategoryId}
             onChange={(e) => setStructureCategoryId(e.target.value)}
-            className="rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
+            className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
           >
             <option value="">Category</option>
             {categories.filter((c) => !c.is_flexible).map((c) => (
@@ -253,7 +253,7 @@ export function FeesSetupTab() {
           <select
             value={structureTermId}
             onChange={(e) => setStructureTermId(e.target.value)}
-            className="rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
+            className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
           >
             <option value="">Term</option>
             {terms.map((t) => (
@@ -268,12 +268,12 @@ export function FeesSetupTab() {
             value={structureAmount}
             onChange={(e) => setStructureAmount(e.target.value)}
             placeholder="Amount"
-            className="rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
+            className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-gray-900 focus:outline-none"
           />
           <button
             type="submit"
             disabled={saveStructureMutation.isPending}
-            className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             Save
           </button>
@@ -282,7 +282,7 @@ export function FeesSetupTab() {
         {generateMessage && <p className="mt-3 text-xs text-gray-600">{generateMessage}</p>}
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[620px] text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-gray-500">
                 <th className="py-2 pr-4">Class</th>

@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient'
-import { fetchStudentsPage } from './queries'
-import { FeeBalanceRow, FeeCategory, FeeCategoryItem, FeeCategoryItemCollection, FeePayment, FeeStructure, StudentFeeSummaryRow } from '../types'
+import { fetchStudentsPage, PAGE_SIZE } from './queries'
+import { FeeBalanceDetailRow, FeeBalanceRow, FeeCategory, FeeCategoryItem, FeeCategoryItemCollection, FeePayment, FeeStructure, StudentFeeSummaryRow } from '../types'
 
 // ------------------------------------------------------------
 // Categories
@@ -554,40 +554,103 @@ export async function adjustChargeAmount(feeChargeId: string, newAmount: number)
 }
 
 // ------------------------------------------------------------
-// Balances overview (admin) — paginated via the existing student
-// pagination, then charges/payments fetched ONLY for that page's
-// students. Never loads the whole school's fee history to compute
-// a list of numbers, regardless of how many students or how many
-// years of payments exist.
+// Balances overview (admin) — all-category results use student
+// pagination; category-filtered results page directly from matching
+// charges. In both cases, only current-page charges and payments are
+// fetched to keep balance calculations bounded.
 // ------------------------------------------------------------
 export async function fetchFeeBalancesPage(params: {
   page: number
   search: string
   classId: string
   termId: string
+  categoryId?: string
 }): Promise<{ balances: FeeBalanceRow[]; total: number }> {
-  const studentsPage = await fetchStudentsPage({
-    page: params.page,
-    search: params.search,
-    classId: params.classId,
-    dateJoinedFrom: '',
-    status: 'active',
-  })
+  type BalanceStudent = {
+    id: string
+    full_name: string
+    admission_number: string
+    class_name: string
+  }
+  type BalanceCharge = { id: string; student_id: string; amount_due: number }
 
-  const studentIds = studentsPage.students.map((s) => s.id)
-  if (studentIds.length === 0) {
-    return { balances: [], total: studentsPage.total }
+  let students: BalanceStudent[]
+  let charges: BalanceCharge[]
+  let total: number
+
+  if (params.categoryId && params.categoryId !== 'all') {
+    const from = params.page * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+    let query = supabase
+      .from('fee_charges')
+      .select(
+        'id, student_id, amount_due, students!inner(id, full_name, admission_number, status, class_id, created_at, classes(name))',
+        { count: 'exact' },
+      )
+      .eq('term_id', params.termId)
+      .eq('fee_category_id', params.categoryId)
+      .eq('students.status', 'active')
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    if (params.classId !== 'all') query = query.eq('students.class_id', params.classId)
+
+    const search = params.search.replace(/[,()]/g, '').trim()
+    if (search) {
+      query = query.or(
+        `full_name.ilike.%${search}%,admission_number.ilike.%${search}%`,
+        { foreignTable: 'students' },
+      )
+    }
+
+    const { data, count, error } = await query
+    if (error) throw error
+
+    const rows = (data ?? []) as unknown as Array<BalanceCharge & {
+      students: {
+        id: string
+        full_name: string
+        admission_number: string
+        classes: { name: string } | null
+      }
+    }>
+    students = rows.map((row) => ({
+      id: row.students.id,
+      full_name: row.students.full_name,
+      admission_number: row.students.admission_number,
+      class_name: row.students.classes?.name ?? 'Unassigned',
+    }))
+    charges = rows.map(({ id, student_id, amount_due }) => ({ id, student_id, amount_due }))
+    total = count ?? 0
+  } else {
+    const studentsPage = await fetchStudentsPage({
+      page: params.page,
+      search: params.search,
+      classId: params.classId,
+      dateJoinedFrom: '',
+      status: 'active',
+    })
+    students = studentsPage.students.map((student) => ({
+      id: student.id,
+      full_name: student.full_name,
+      admission_number: student.admission_number,
+      class_name: student.class_name ?? 'Unassigned',
+    }))
+    total = studentsPage.total
+
+    const studentIds = students.map((student) => student.id)
+    if (studentIds.length === 0) return { balances: [], total }
+
+    const { data, error } = await supabase
+      .from('fee_charges')
+      .select('id, student_id, amount_due')
+      .eq('term_id', params.termId)
+      .in('student_id', studentIds)
+    if (error) throw error
+    charges = (data ?? []) as BalanceCharge[]
   }
 
-  const { data: charges, error: chargesError } = await supabase
-    .from('fee_charges')
-    .select('id, student_id, amount_due')
-    .eq('term_id', params.termId)
-    .in('student_id', studentIds)
-
-  if (chargesError) throw chargesError
-
-  const chargeIds = (charges ?? []).map((c) => c.id)
+  const chargeIds = charges.map((charge) => charge.id)
   let payments: { fee_charge_id: string; amount: number }[] = []
 
   if (chargeIds.length > 0) {
@@ -607,27 +670,156 @@ export async function fetchFeeBalancesPage(params: {
 
   const dueByStudent = new Map<string, number>()
   const paidByStudent = new Map<string, number>()
-  for (const c of charges ?? []) {
-    dueByStudent.set(c.student_id, (dueByStudent.get(c.student_id) ?? 0) + c.amount_due)
+  for (const c of charges) {
+    dueByStudent.set(c.student_id, (dueByStudent.get(c.student_id) ?? 0) + Number(c.amount_due))
     paidByStudent.set(
       c.student_id,
       (paidByStudent.get(c.student_id) ?? 0) + (paidByCharge.get(c.id) ?? 0),
     )
   }
 
-  const balances: FeeBalanceRow[] = studentsPage.students.map((s) => {
+  const balances: FeeBalanceRow[] = students.map((s) => {
     const totalDue = dueByStudent.get(s.id) ?? 0
     const totalPaid = paidByStudent.get(s.id) ?? 0
     return {
       student_id: s.id,
       full_name: s.full_name,
       admission_number: s.admission_number,
-      class_name: s.class_name ?? 'Unassigned',
+      class_name: s.class_name,
       total_due: totalDue,
       total_paid: totalPaid,
       total_balance: totalDue - totalPaid,
     }
   })
 
-  return { balances, total: studentsPage.total }
+  return { balances, total }
+}
+
+export async function fetchFeeBalanceTotals(params: {
+  search: string
+  classId: string
+  termId: string
+  categoryId: string
+}): Promise<{ total_due: number; total_paid: number; total_balance: number }> {
+  const { data, error } = await supabase.rpc('get_fee_balance_totals', {
+    p_term_id: params.termId,
+    p_class_id: params.classId === 'all' ? null : params.classId,
+    p_category_id: params.categoryId === 'all' ? null : params.categoryId,
+    p_search: params.search,
+  })
+  if (error) throw error
+
+  const totals = Array.isArray(data) ? data[0] : data
+  return {
+    total_due: Number(totals?.total_due ?? 0),
+    total_paid: Number(totals?.total_paid ?? 0),
+    total_balance: Number(totals?.total_balance ?? 0),
+  }
+}
+
+export async function fetchFeeBalanceDetails(params: {
+  studentId: string
+  termId: string
+  categoryId: string
+}): Promise<FeeBalanceDetailRow[]> {
+  let chargesQuery = supabase
+    .from('fee_charges')
+    .select('id, fee_category_id, amount_due, fee_categories ( id, name, is_flexible )')
+    .eq('student_id', params.studentId)
+    .eq('term_id', params.termId)
+  if (params.categoryId !== 'all') chargesQuery = chargesQuery.eq('fee_category_id', params.categoryId)
+
+  const { data: chargesData, error: chargesError } = await chargesQuery
+  if (chargesError) throw chargesError
+  const charges = (chargesData ?? []) as unknown as Array<{
+    id: string
+    fee_category_id: string
+    amount_due: number
+    fee_categories: { id: string; name: string; is_flexible: boolean } | null
+  }>
+  if (charges.length === 0) return []
+
+  const chargeIds = charges.map((charge) => charge.id)
+  const flexibleCategoryIds = [...new Set(
+    charges.filter((charge) => charge.fee_categories?.is_flexible).map((charge) => charge.fee_category_id),
+  )]
+  const [paymentsResult, itemsResult, collectionsResult] = await Promise.all([
+    supabase
+      .from('fee_payments')
+      .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at, recorded_by, recorder:profiles!fee_payments_recorded_by_fkey(full_name)')
+      .in('fee_charge_id', chargeIds)
+      .order('payment_date', { ascending: false }),
+    flexibleCategoryIds.length > 0
+      ? supabase.from('fee_category_items').select('id, fee_category_id, name').in('fee_category_id', flexibleCategoryIds).order('name')
+      : Promise.resolve({ data: [], error: null }),
+    flexibleCategoryIds.length > 0
+      ? supabase
+        .from('fee_category_item_collections')
+        .select('fee_category_id, fee_category_item_id, item_name, is_collected, collected_at')
+        .eq('student_id', params.studentId)
+        .eq('term_id', params.termId)
+        .in('fee_category_id', flexibleCategoryIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (paymentsResult.error) throw paymentsResult.error
+  if (itemsResult.error) throw itemsResult.error
+  if (collectionsResult.error) throw collectionsResult.error
+
+  const paymentRows = (paymentsResult.data ?? []) as unknown as Array<FeePayment & {
+    recorder: { full_name: string } | null
+  }>
+  const paymentsByCharge = new Map<string, FeePayment[]>()
+  for (const { recorder, ...payment } of paymentRows) {
+    const normalizedPayment = { ...payment, posted_by_name: recorder?.full_name ?? null }
+    paymentsByCharge.set(payment.fee_charge_id, [
+      ...(paymentsByCharge.get(payment.fee_charge_id) ?? []),
+      normalizedPayment,
+    ])
+  }
+
+  const catalogItems = (itemsResult.data ?? []) as FeeCategoryItem[]
+  const itemCollections = (collectionsResult.data ?? []) as Array<{
+    fee_category_id: string
+    fee_category_item_id: string | null
+    item_name: string
+    is_collected: boolean
+    collected_at: string | null
+  }>
+  return charges.map((charge) => {
+    const categoryItems = catalogItems.filter((item) => item.fee_category_id === charge.fee_category_id)
+    const categoryCollections = itemCollections.filter((item) => item.fee_category_id === charge.fee_category_id)
+    const collectionsByItem = new Map(
+      categoryCollections
+        .filter((item) => item.fee_category_item_id)
+        .map((item) => [item.fee_category_item_id!, item]),
+    )
+    const items = [
+      ...categoryItems.map((item) => {
+        const collection = collectionsByItem.get(item.id)
+        return {
+          item_name: item.name,
+          is_collected: collection?.is_collected ?? false,
+          collected_at: collection?.collected_at ?? null,
+        }
+      }),
+      ...categoryCollections
+        .filter((item) => item.fee_category_item_id === null && item.is_collected)
+        .map((item) => ({ item_name: item.item_name, is_collected: true, collected_at: item.collected_at })),
+    ]
+    const payments = paymentsByCharge.get(charge.id) ?? []
+    const amountPaid = payments.reduce((total, payment) => total + Number(payment.amount), 0)
+    const amountDue = Number(charge.amount_due)
+
+    return {
+      fee_charge_id: charge.id,
+      fee_category_id: charge.fee_category_id,
+      category_name: charge.fee_categories?.name ?? 'Unknown',
+      is_flexible: charge.fee_categories?.is_flexible ?? false,
+      amount_due: amountDue,
+      amount_paid: amountPaid,
+      balance: amountDue - amountPaid,
+      payments,
+      items,
+    }
+  })
 }

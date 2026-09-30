@@ -281,7 +281,7 @@ export function RecordPaymentPanel() {
 
   if (!selectedStudent) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
+      <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
         <h3 className="text-base font-semibold text-gray-900">Find a Student</h3>
         <input
           autoFocus
@@ -315,11 +315,11 @@ export function RecordPaymentPanel() {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-6">
+      <div className="flex items-start justify-between gap-3 sm:items-center">
+        <div className="min-w-0">
           <h3 className="text-base font-semibold text-gray-900">{selectedStudent.full_name}</h3>
-          <p className="text-xs text-gray-500">
+          <p className="break-words text-xs text-gray-500">
             {selectedStudent.class_name} · Adm No: {selectedStudent.admission_number}
           </p>
         </div>
@@ -335,7 +335,7 @@ export function RecordPaymentPanel() {
             setError(null)
             setCollectionError(null)
           }}
-          className="text-xs font-medium text-gray-500 underline hover:text-gray-900"
+          className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500 underline hover:text-gray-900"
         >
           Change Student
         </button>
@@ -389,14 +389,14 @@ export function RecordPaymentPanel() {
           <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
             <p className="text-sm font-medium text-gray-900">Record Flexible Fee</p>
             <p className="mt-1 text-xs text-gray-600">This fee applies only to this student and term.</p>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               <select
                 value={flexibleCategoryId}
                 onChange={(e) => {
                   setFlexibleCategoryId(e.target.value)
                   setFlexibleItemIds([])
                 }}
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
               >
                 <option value="">Category</option>
                 {flexibleCategories.filter((category) => category.is_flexible).map((category) => (
@@ -406,7 +406,7 @@ export function RecordPaymentPanel() {
               <select
                 value={flexibleTermId}
                 onChange={(e) => setFlexibleTermId(e.target.value)}
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
               >
                 <option value="">Term</option>
                 {terms.map((term) => (
@@ -419,7 +419,7 @@ export function RecordPaymentPanel() {
                 value={flexibleTotalDue}
                 onChange={(e) => setFlexibleTotalDue(e.target.value)}
                 placeholder="Total due (first payment)"
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
               />
               <input
                 type="number"
@@ -427,18 +427,18 @@ export function RecordPaymentPanel() {
                 value={flexibleAmount}
                 onChange={(e) => setFlexibleAmount(e.target.value)}
                 placeholder="Amount"
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
               />
               <input
                 type="date"
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                className="w-full min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
               />
               <button
                 onClick={() => flexiblePaymentMutation.mutate()}
                 disabled={flexiblePaymentMutation.isPending || (flexibleCategoryItems.length > 0 && flexibleItemIds.length === 0)}
-                className="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+                className="w-full rounded-lg bg-blue-700 px-3 py-2 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50"
               >
                 {flexiblePaymentMutation.isPending ? 'Saving...' : 'Record Flexible Payment'}
               </button>
@@ -657,34 +657,34 @@ export function RecordPaymentPanel() {
                 </div>
 
                 {payingChargeId === row.fee_charge_id && (
-                  <div className="mt-3 grid grid-cols-1 gap-2 border-t border-gray-100 pt-3 sm:grid-cols-4">
+                  <div className="mt-3 grid grid-cols-1 gap-2 border-t border-gray-100 pt-3 sm:grid-cols-2 xl:grid-cols-4">
                     <input
                       type="number"
                       min={0}
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       placeholder="Amount"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                      className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
                     />
                     <input
                       type="date"
                       value={paymentDate}
                       onChange={(e) => setPaymentDate(e.target.value)}
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                      className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
                     />
                     <input
                       value={method}
                       onChange={(e) => setMethod(e.target.value)}
                       placeholder="Method (optional)"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                      className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
                     />
                     <input
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                       placeholder="Note (optional)"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+                      className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
                     />
-                    <div className="sm:col-span-4">
+                    <div className="sm:col-span-2 xl:col-span-4">
                       {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
                       <button
                         onClick={() => paymentMutation.mutate()}
@@ -725,13 +725,13 @@ export function RecordPaymentPanel() {
                         {history.map((p) => (
                           <li key={p.id} className="space-y-2">
                             {editingPaymentId === p.id ? (
-                              <div className="grid grid-cols-1 gap-2 rounded-lg bg-gray-50 p-2 sm:grid-cols-4">
-                                <input type="number" min={0.01} value={editPaymentAmount} onChange={(e) => setEditPaymentAmount(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-xs" />
-                                <input type="date" value={editPaymentDate} onChange={(e) => setEditPaymentDate(e.target.value)} className="rounded border border-gray-300 px-2 py-1 text-xs" />
-                                <input value={editPaymentMethod} onChange={(e) => setEditPaymentMethod(e.target.value)} placeholder="Method" className="rounded border border-gray-300 px-2 py-1 text-xs" />
-                                <input value={editPaymentNote} onChange={(e) => setEditPaymentNote(e.target.value)} placeholder="Note" className="rounded border border-gray-300 px-2 py-1 text-xs" />
+                              <div className="grid grid-cols-1 gap-2 rounded-lg bg-gray-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+                                <input type="number" min={0.01} value={editPaymentAmount} onChange={(e) => setEditPaymentAmount(e.target.value)} className="w-full min-w-0 rounded border border-gray-300 px-2 py-1 text-xs" />
+                                <input type="date" value={editPaymentDate} onChange={(e) => setEditPaymentDate(e.target.value)} className="w-full min-w-0 rounded border border-gray-300 px-2 py-1 text-xs" />
+                                <input value={editPaymentMethod} onChange={(e) => setEditPaymentMethod(e.target.value)} placeholder="Method" className="w-full min-w-0 rounded border border-gray-300 px-2 py-1 text-xs" />
+                                <input value={editPaymentNote} onChange={(e) => setEditPaymentNote(e.target.value)} placeholder="Note" className="w-full min-w-0 rounded border border-gray-300 px-2 py-1 text-xs" />
                                 {editingCharge?.is_flexible && (
-                                  <fieldset className="rounded border border-gray-200 bg-white p-2 sm:col-span-4">
+                                  <fieldset className="rounded border border-gray-200 bg-white p-2 sm:col-span-2 xl:col-span-4">
                                     <legend className="px-1 text-xs font-medium text-gray-700">Items this payment is for</legend>
                                     <div className="flex flex-wrap gap-x-4 gap-y-2">
                                       {Array.from(new Set([...editingCategoryItems.map((item) => item.name), ...editPaymentItems])).map((itemName) => (
@@ -752,11 +752,11 @@ export function RecordPaymentPanel() {
                                     </div>
                                   </fieldset>
                                 )}
-                                <div className="flex gap-2 sm:col-span-4">
+                                <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-4">
                                   <button type="button" onClick={() => updatePaymentMutation.mutate()} disabled={updatePaymentMutation.isPending} className="rounded bg-gray-900 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50">{updatePaymentMutation.isPending ? 'Saving...' : 'Save'}</button>
                                   <button type="button" onClick={() => { setEditingPaymentId(null); setEditPaymentItems([]); setError(null) }} className="rounded border border-gray-300 px-2.5 py-1 text-xs">Cancel</button>
                                 </div>
-                                {error && <p role="alert" className="text-xs text-red-600 sm:col-span-4">{error}</p>}
+                                {error && <p role="alert" className="text-xs text-red-600 sm:col-span-2 xl:col-span-4">{error}</p>}
                               </div>
                             ) : (
                               <div className="flex items-center justify-between gap-2">
