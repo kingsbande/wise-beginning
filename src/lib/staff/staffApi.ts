@@ -86,7 +86,7 @@ export async function fetchTeacherDetails(teacherId: string): Promise<TeacherDet
   const { data, error } = await supabase
     .from('teacher_details')
     .select(
-      'id, date_of_birth, national_id, home_address, personal_phone, personal_email, emergency_contact_name, emergency_contact_phone, highest_degree, major, resume_summary, employee_id, date_of_hire, contract_type, salary_grade',
+      'id, date_of_birth, national_id, home_address, personal_phone, personal_email, emergency_contact_name, emergency_contact_phone, highest_qualification, tcm_number, major, resume_summary, employee_id, date_of_hire, contract_type, salary_grade',
     )
     .eq('id', teacherId)
     .maybeSingle()

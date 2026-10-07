@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PageHeader } from '../components/PageHeader'
 import { BalancesOverview } from '../components/fees/BalancesOverview'
 import { RecordPaymentPanel } from '../components/fees/RecordPaymentPanel'
 import { FeesSetupTab } from '../components/fees/FeesSetupTab'
@@ -15,8 +16,8 @@ export function Fees() {
   ]
 
   return (
-    <div className="mx-auto max-w-5xl px-3 py-4 sm:px-6 sm:py-8">
-      <h1 className="mb-4 text-lg font-semibold text-gray-900">Fees</h1>
+    <div className="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-8">
+      <PageHeader title="Fees" description="Track balances, record payments, and configure fee structures." />
 
       <div className="mb-6 flex gap-2 overflow-x-auto border-b border-gray-200">
         {tabs.map((t) => (

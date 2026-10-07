@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   ArrowRight,
   AlertTriangle,
+  BadgeCheck,
   BarChart3,
   BookOpen,
   CalendarCheck,
@@ -28,19 +29,27 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { fetchTeacherAssignments } from '../lib/staff/staffApi'
 import { fetchMyClassTeacherClasses, normalizeClassId } from '../lib/attendanceApi'
-import { fetchStudentsPage, PAGE_SIZE } from '../lib/queries'
+import { fetchClasses, fetchStudentsPage, PAGE_SIZE } from '../lib/queries'
 import { AttendanceMarkingGrid } from '../components/attendance/AttendanceMarkingGrid'
 import { AttendanceReports } from '../components/attendance/AttendanceReports'
 import { TeacherGrades } from '../components/teacher/TeacherGrades'
 import { TeacherReviewsView } from '../components/teacher/TeacherReviewsView'
 import { TeacherCurriculumView } from '../components/teacher/TeacherCurriculumView'
+import { CurriculumProgressView } from '../components/admin/CurriculumProgressView'
 import { ProfilePictureForm } from '../components/settings/ProfilePictureForm'
 import { ChangePasswordForm } from '../components/settings/ChangePasswordForm'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { Pagination } from '../components/Pagination'
+import { useCloseOnDesktop } from '../lib/useCloseOnDesktop'
 import logo from '../assets/logo.png'
 
-type View = 'overview' | 'attendance' | 'grades' | 'students' | 'curriculum' | 'reviews' | 'settings'
+type View = 'overview' | 'attendance' | 'grades' | 'students' | 'curriculum' | 'verify-topics' | 'reviews' | 'settings'
+
+interface TeacherDashboardProps {
+  portalLabel?: string
+  storageKey?: string
+  allSchoolClasses?: boolean
+}
 
 const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -52,6 +61,12 @@ const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ]
 
+const HEADTEACHER_NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
+  ...NAV_ITEMS.slice(0, 5),
+  { id: 'verify-topics', label: 'Verify Topics Taught', icon: BadgeCheck },
+  ...NAV_ITEMS.slice(5),
+]
+
 function getInitials(name?: string | null) {
   if (!name) return 'T'
   const parts = name.trim().split(/\s+/)
@@ -59,11 +74,16 @@ function getInitials(name?: string | null) {
   return initials.join('') || 'T'
 }
 
-export function TeacherDashboard() {
+export function TeacherDashboard({
+  portalLabel = 'Teacher Portal',
+  storageKey = 'teacherDashboardView',
+  allSchoolClasses = false,
+}: TeacherDashboardProps = {}) {
   const { profile, signOut } = useAuth()
+  const navItems = profile?.role === 'headteacher' ? HEADTEACHER_NAV_ITEMS : NAV_ITEMS
   const [activeView, setActiveView] = useState<View>(() => {
-    const saved = sessionStorage.getItem('teacherDashboardView') as View | null
-    return saved && NAV_ITEMS.some((item) => item.id === saved) ? saved : 'overview'
+    const saved = sessionStorage.getItem(storageKey) as View | null
+    return saved && [...NAV_ITEMS, HEADTEACHER_NAV_ITEMS[5]].some((item) => item.id === saved) ? saved : 'overview'
   })
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -81,8 +101,14 @@ export function TeacherDashboard() {
   const debouncedRosterSearch = useDebouncedValue(rosterSearch)
 
   useEffect(() => {
-    sessionStorage.setItem('teacherDashboardView', activeView)
-  }, [activeView])
+    sessionStorage.setItem(storageKey, activeView)
+  }, [activeView, storageKey])
+
+  useEffect(() => {
+    if (profile && profile.role !== 'headteacher' && activeView === 'verify-topics') {
+      setActiveView('overview')
+    }
+  }, [activeView, profile])
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -109,14 +135,7 @@ export function TeacherDashboard() {
   }, [isMobileMenuOpen])
 
   // Auto-close mobile drawer if viewport grows to desktop
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(min-width: 1024px)')
-    const handleChange = (event: MediaQueryListEvent) => {
-      if (event.matches) setIsMobileMenuOpen(false)
-    }
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [])
+  useCloseOnDesktop(() => setIsMobileMenuOpen(false))
 
   const timeGreeting = useMemo(() => {
     const hour = new Date().getHours()
@@ -151,7 +170,13 @@ export function TeacherDashboard() {
     enabled: !!profile?.id,
   })
 
-  // List of all distinct classes taught or managed by this teacher
+  const { data: schoolClasses = [] } = useQuery({
+    queryKey: ['headteacher-classes', profile?.school_id],
+    queryFn: fetchClasses,
+    enabled: allSchoolClasses && !!profile?.school_id,
+  })
+
+  // Teachers see assigned classes; headteachers can see every class in their school.
   const distinctClasses = useMemo(() => {
     const map = new Map<string, string>()
     for (const c of classTeacherClasses) {
@@ -165,17 +190,19 @@ export function TeacherDashboard() {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
   }, [classTeacherClasses, assignments])
 
+  const attendanceClasses = allSchoolClasses ? schoolClasses : distinctClasses
+
   // Keep attendance on a class this teacher teaches or manages.
   useEffect(() => {
-    if (distinctClasses.length === 0) {
+    if (attendanceClasses.length === 0) {
       setAttendanceClassId('')
       return
     }
 
-    if (!distinctClasses.some((c) => c.id === attendanceClassId)) {
-      setAttendanceClassId(distinctClasses[0].id)
+    if (!attendanceClasses.some((c) => c.id === attendanceClassId)) {
+      setAttendanceClassId(attendanceClasses[0].id)
     }
-  }, [distinctClasses, attendanceClassId])
+  }, [attendanceClasses, attendanceClassId])
 
   // Sync initial class selection for Roster
   useEffect(() => {
@@ -203,7 +230,7 @@ export function TeacherDashboard() {
 
   const initials = getInitials(profile?.full_name)
   const isClassTeacher = classTeacherClasses.length > 0
-  const selectedAttendanceClass = classTeacherClasses.find((c) => c.id === attendanceClassId)
+  const selectedAttendanceClass = attendanceClasses.find((c) => c.id === attendanceClassId)
   const selectedRosterClass = distinctClasses.find((c) => c.id === rosterClassId)
 
   function handleNavSelect(id: View) {
@@ -272,7 +299,7 @@ export function TeacherDashboard() {
               </p>
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-[11px] font-medium uppercase tracking-[0.2em] text-rose-400">
-                  Teacher Portal
+                  {portalLabel}
                 </span>
                 {isClassTeacher && (
                   <span className="hidden sm:inline-flex items-center rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-medium text-rose-300 border border-rose-500/30">
@@ -401,7 +428,7 @@ export function TeacherDashboard() {
                 className={`text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 ${isSidebarCollapsed ? 'lg:hidden' : ''
                   }`}
               >
-                Teacher Menu
+                {profile?.role === 'headteacher' ? 'Headteacher Menu' : 'Teacher Menu'}
               </span>
             </div>
 
@@ -417,7 +444,7 @@ export function TeacherDashboard() {
           </div>
 
           <nav className="flex flex-col gap-1">
-            {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+            {navItems.map(({ id, label, icon: Icon }) => {
               const isActive = activeView === id
               return (
                 <button
@@ -822,7 +849,7 @@ export function TeacherDashboard() {
                     </p>
                   </div>
 
-                  {distinctClasses.length > 1 && (
+                  {attendanceClasses.length > 1 && (
                     <div className="flex flex-wrap items-center gap-2">
                       <label htmlFor="teacher-attendance-class" className="text-xs font-semibold text-slate-600">
                         Class:
@@ -834,7 +861,7 @@ export function TeacherDashboard() {
                         className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-400/20"
                       >
                         <option value="">Select class</option>
-                        {distinctClasses.map((c) => (
+                        {attendanceClasses.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.name}
                           </option>
@@ -872,7 +899,7 @@ export function TeacherDashboard() {
                   </button>
                 </div>
 
-                {distinctClasses.length > 0 && (
+                {attendanceClasses.length > 0 && (
                   <div className="mt-5">
                     {!selectedAttendanceClass || !profile ? null : attendanceTab === 'mark' ? (
                       <AttendanceMarkingGrid
@@ -1085,7 +1112,16 @@ export function TeacherDashboard() {
           )}
 
           {activeView === 'curriculum' && profile && (
-            <TeacherCurriculumView assignments={assignments} teacherId={profile.id} schoolId={profile.school_id} />
+            <TeacherCurriculumView
+              assignments={assignments}
+              teacherId={profile.id}
+              schoolId={profile.school_id}
+              isHeadteacher={profile.role === 'headteacher'}
+            />
+          )}
+
+          {activeView === 'verify-topics' && profile?.role === 'headteacher' && (
+            <CurriculumProgressView reviewerRole="headteacher" />
           )}
 
           {/* ========================================================= */}
@@ -1098,7 +1134,7 @@ export function TeacherDashboard() {
                   Account Settings
                 </h2>
                 <p className="text-xs text-slate-500 sm:text-sm mb-6">
-                  Manage your teacher profile avatar and update your portal password.
+                  Manage your profile avatar and update your portal password.
                 </p>
 
                 <div className="space-y-6 max-w-2xl">
@@ -1114,7 +1150,7 @@ export function TeacherDashboard() {
       {/* Mobile Bottom Navigation Bar */}
       <nav className="fixed bottom-3 left-1/2 z-50 w-[min(640px,96%)] -translate-x-1/2 rounded-2xl bg-white/95 backdrop-blur-md px-2 py-1.5 shadow-xl border border-slate-200/80 lg:hidden">
         <div className="flex items-center justify-around">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+          {navItems.map(({ id, label, icon: Icon }) => {
             const isActive = activeView === id
             return (
               <button

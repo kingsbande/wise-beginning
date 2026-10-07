@@ -3,16 +3,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BarChart3, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { fetchCurriculumProgress, fetchCurriculumTopicsForAdmin, fetchTerms, reviewCurriculumTopic } from '../../lib/topicsApi'
+import { useAuth } from '../../context/AuthContext'
 import { CurriculumTopic, CurriculumTopicProgress } from '../../types'
 
-export function CurriculumProgressView() {
+type ReviewerRole = 'admin' | 'headteacher'
+type ReviewAction = 'verified' | 'approved' | 'disapproved'
+
+export function CurriculumProgressView({ reviewerRole = 'admin' }: { reviewerRole?: ReviewerRole } = {}) {
+  const { profile } = useAuth()
   const queryClient = useQueryClient()
   const [termId, setTermId] = useState('')
   const [teacherId, setTeacherId] = useState('')
   const [classId, setClassId] = useState('')
   const [subjectId, setSubjectId] = useState('')
   const [topicToReview, setTopicToReview] = useState<CurriculumTopic | null>(null)
-  const [reviewAction, setReviewAction] = useState<'approved' | 'disapproved' | null>(null)
+  const [reviewAction, setReviewAction] = useState<ReviewAction | null>(null)
   const [reviewComment, setReviewComment] = useState('')
   const [reviewError, setReviewError] = useState<string | null>(null)
   const { data: terms = [], isLoading: isTermsLoading } = useQuery({ queryKey: ['terms'], queryFn: fetchTerms })
@@ -52,7 +57,7 @@ export function CurriculumProgressView() {
   const teachers = uniqueBy(rows, 'teacher_id', 'teacher_name')
   const classes = uniqueBy(rows, 'class_id', 'class_name')
   const subjects = uniqueBy(rows, 'subject_id', 'subject_name')
-  const filteredRows = rows.filter((row) => (!teacherId || row.teacher_id === teacherId) && (!classId || row.class_id === classId) && (!subjectId || row.subject_id === subjectId))
+  const filteredRows = rows.filter((row) => (!teacherId || row.teacher_id === teacherId) && (!classId || row.class_id === classId) && (!subjectId || row.subject_id === subjectId) && (reviewerRole !== 'headteacher' || row.teacher_id !== profile?.id))
   const totals = filteredRows.reduce((summary, row) => ({ total: summary.total + row.total_topics, completed: summary.completed + row.completed_topics }), { total: 0, completed: 0 })
   const rate = totals.total ? Math.round((totals.completed / totals.total) * 100) : 0
 
@@ -64,8 +69,8 @@ export function CurriculumProgressView() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">Academic oversight</p>
-            <h2 className="mt-1 text-2xl font-bold text-slate-900">Curriculum progress</h2>
-            <p className="mt-1 text-sm text-slate-500">See how much of each assigned subject has been covered.</p>
+            <h2 className="mt-1 text-2xl font-bold text-slate-900">{reviewerRole === 'headteacher' ? 'Verify topics taught' : 'Curriculum progress'}</h2>
+            <p className="mt-1 text-sm text-slate-500">{reviewerRole === 'headteacher' ? "Verify teachers' submitted topics. Admin approval is still required before they count as taught." : 'Review headteacher-verified topics for final approval and track curriculum coverage.'}</p>
           </div>
           <div className="rounded-xl bg-emerald-50 px-5 py-3 text-right">
             <p className="text-xs font-medium text-emerald-700">Overall completion</p>
@@ -84,15 +89,15 @@ export function CurriculumProgressView() {
       {isLoading || isTopicsLoading ? <Loading /> : isError || isTopicsError ? <Empty title="Progress could not load" message="Refresh the page and try again." /> : filteredRows.length === 0 ? <Empty title="No topic progress yet" message="Teachers will appear here after they add topics for the selected term." /> : (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 p-4 sm:p-5"><BarChart3 className="h-5 w-5 text-rose-600" /><h3 className="font-semibold text-slate-900">Progress by class and subject</h3></div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">Teacher</th><th className="px-5 py-3 font-semibold">Class</th><th className="px-5 py-3 font-semibold">Subject</th><th className="px-5 py-3 font-semibold">Topics</th><th className="px-5 py-3 font-semibold">Progress</th><th className="px-5 py-3 font-semibold">Details</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredRows.map((row) => <ProgressRow key={`${row.teacher_id}-${row.class_id}-${row.subject_id}`} row={row} topics={topics.filter((topic) => topic.teacher_id === row.teacher_id && topic.class_id === row.class_id && topic.subject_id === row.subject_id)} onReview={(topic, action) => { setTopicToReview(topic); setReviewAction(action); setReviewError(null) }} />)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">Teacher</th><th className="px-5 py-3 font-semibold">Class</th><th className="px-5 py-3 font-semibold">Subject</th><th className="px-5 py-3 font-semibold">Topics</th><th className="px-5 py-3 font-semibold">Progress</th><th className="px-5 py-3 font-semibold">Details</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredRows.map((row) => <ProgressRow key={`${row.teacher_id}-${row.class_id}-${row.subject_id}`} row={row} topics={topics.filter((topic) => topic.teacher_id === row.teacher_id && topic.class_id === row.class_id && topic.subject_id === row.subject_id)} reviewerRole={reviewerRole} reviewerId={profile?.id} authorRole={row.teacher_role} onReview={(topic, action) => { setTopicToReview(topic); setReviewAction(action); setReviewError(null) }} />)}</tbody></table></div>
         </div>
       )}
       {reviewError && <p className="text-sm text-red-600">{reviewError}</p>}
-      {topicToReview && reviewAction === 'approved' && (
+      {topicToReview && reviewAction && reviewAction !== 'disapproved' && (
         <ConfirmDialog
-          title={reviewAction === 'approved' ? 'Approve taught topic?' : 'Disapprove taught topic?'}
-          message={reviewAction === 'approved' ? `Approve "${topicToReview.title}" as taught?` : `Disapprove "${topicToReview.title}" and return it to the teacher for correction?`}
-          confirmLabel={reviewMutation.isPending ? 'Saving...' : reviewAction === 'approved' ? 'Approve' : 'Disapprove'}
+          title={reviewAction === 'verified' ? 'Verify taught topic?' : 'Approve taught topic?'}
+          message={reviewAction === 'verified' ? `Verify "${topicToReview.title}" and send it to an admin for final approval?` : `Give final approval to "${topicToReview.title}" as taught?`}
+          confirmLabel={reviewMutation.isPending ? 'Saving...' : reviewAction === 'verified' ? 'Verify' : 'Approve'}
           onCancel={() => {
             if (!reviewMutation.isPending) {
               setTopicToReview(null)
@@ -116,7 +121,7 @@ export function CurriculumProgressView() {
   )
 }
 
-function ProgressRow({ row, topics, onReview }: { row: CurriculumTopicProgress; topics: CurriculumTopic[]; onReview: (topic: CurriculumTopic, action: 'approved' | 'disapproved') => void }) {
+function ProgressRow({ row, topics, reviewerRole, reviewerId, authorRole, onReview }: { row: CurriculumTopicProgress; topics: CurriculumTopic[]; reviewerRole: ReviewerRole; reviewerId?: string; authorRole: 'teacher' | 'headteacher'; onReview: (topic: CurriculumTopic, action: ReviewAction) => void }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const completedTopics = topics.filter((topic) => topic.approval_status === 'approved')
   const remainingTopics = topics.filter((topic) => topic.approval_status !== 'approved')
@@ -131,13 +136,74 @@ function ProgressRow({ row, topics, onReview }: { row: CurriculumTopicProgress; 
         <td className="px-5 py-4"><div className="flex items-center gap-3"><div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${row.completion_rate}%` }} /></div><span className="font-semibold text-slate-700">{row.completion_rate}%</span></div></td>
         <td className="px-5 py-4"><button type="button" onClick={() => setIsExpanded((expanded) => !expanded)} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50" aria-expanded={isExpanded}>{isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} {isExpanded ? 'Hide' : 'View topics'}</button></td>
       </tr>
-      {isExpanded && <tr><td colSpan={6} className="bg-slate-50 px-5 py-5"><div className="grid gap-5 lg:grid-cols-2"><TopicGroup title="Approved topics" topics={completedTopics} completed onReview={onReview} /><TopicGroup title="Topics awaiting review" topics={remainingTopics} onReview={onReview} /></div></td></tr>}
+      {isExpanded && <tr><td colSpan={6} className="bg-slate-50 px-5 py-5"><div className="grid gap-5 lg:grid-cols-2"><TopicGroup title="Approved topics" topics={completedTopics} completed reviewerRole={reviewerRole} reviewerId={reviewerId} authorRole={authorRole} onReview={onReview} /><TopicGroup title={reviewerRole === 'headteacher' ? 'Topics for verification' : 'Topics awaiting review'} topics={remainingTopics} reviewerRole={reviewerRole} reviewerId={reviewerId} authorRole={authorRole} onReview={onReview} /></div></td></tr>}
     </>
   )
 }
 
-function TopicGroup({ title, topics, completed = false, onReview }: { title: string; topics: CurriculumTopic[]; completed?: boolean; onReview: (topic: CurriculumTopic, action: 'approved' | 'disapproved') => void }) {
-  return <div><h4 className={`text-xs font-semibold uppercase tracking-wide ${completed ? 'text-emerald-700' : 'text-amber-700'}`}>{title} <span className="font-normal">({topics.length})</span></h4>{topics.length === 0 ? <p className="mt-2 text-sm text-slate-500">{completed ? 'No approved topics yet.' : 'No topics awaiting review.'}</p> : <div className="mt-2 space-y-2">{topics.map((topic) => <div key={topic.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"><div><p className="text-sm font-medium text-slate-800">{topic.title}</p><p className={`mt-1 text-xs font-semibold ${topic.approval_status === 'pending_approval' ? 'text-amber-700' : topic.approval_status === 'disapproved' ? 'text-red-600' : topic.approval_status === 'approved' ? 'text-emerald-700' : 'text-slate-500'}`}>Status: {topic.approval_status.replace('_', ' ')}</p><p className="mt-1 text-xs text-slate-600">Date taught: {topic.taught_on ? new Date(`${topic.taught_on}T00:00:00`).toLocaleDateString() : 'Not recorded'}</p>{topic.note && <p className="mt-1 text-xs text-slate-500">Note: {topic.note}</p>}{topic.approval_comment && <p className="mt-1 text-xs text-red-600">Review comment: {topic.approval_comment}</p>}</div><div className="flex shrink-0 gap-2">{!completed && topic.approval_status === 'pending_approval' && <><button type="button" onClick={() => onReview(topic, 'approved')} className="rounded-lg border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button><button type="button" onClick={() => onReview(topic, 'disapproved')} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">Disapprove</button></>}</div></div>)}</div>}</div>
+function TopicGroup({ title, topics, completed = false, reviewerRole, reviewerId, authorRole, onReview }: { title: string; topics: CurriculumTopic[]; completed?: boolean; reviewerRole: ReviewerRole; reviewerId?: string; authorRole: 'teacher' | 'headteacher'; onReview: (topic: CurriculumTopic, action: ReviewAction) => void }) {
+  return (
+    <div>
+      <h4 className={`text-xs font-semibold uppercase tracking-wide ${completed ? 'text-emerald-700' : 'text-amber-700'}`}>
+        {title} <span className="font-normal">({topics.length})</span>
+      </h4>
+      {topics.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">{completed ? 'No approved topics yet.' : 'No topics awaiting review.'}</p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {topics.map((topic) => {
+            const canVerify = reviewerRole === 'headteacher' && topic.teacher_id !== reviewerId && topic.approval_status === 'pending_approval'
+            const canFinalize = reviewerRole === 'admin'
+              && (topic.approval_status === 'verified' || (authorRole === 'headteacher' && topic.approval_status === 'pending_approval'))
+            const statusTone = topic.approval_status === 'pending_approval'
+              ? 'text-amber-700'
+              : topic.approval_status === 'verified'
+                ? 'text-sky-700'
+                : topic.approval_status === 'disapproved'
+                  ? 'text-red-600'
+                  : topic.approval_status === 'approved'
+                    ? 'text-emerald-700'
+                    : 'text-slate-500'
+
+            return (
+              <div key={topic.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{topic.title}</p>
+                  <p className={`mt-1 text-xs font-semibold ${statusTone}`}>
+                    Status: {topic.approval_status.replace(/_/g, ' ')}
+                  </p>
+                  {topic.approval_status === 'verified' && (
+                    <p className="mt-1 text-xs text-sky-700">Verified; waiting for final admin approval.</p>
+                  )}
+                  {topic.approval_status === 'pending_approval' && reviewerRole === 'admin' && (
+                    <p className="mt-1 text-xs text-amber-700">{authorRole === 'headteacher' ? 'Headteacher submission; waiting for admin approval.' : 'Waiting for headteacher verification.'}</p>
+                  )}
+                  <p className="mt-1 text-xs text-slate-600">
+                    Date taught: {topic.taught_on ? new Date(`${topic.taught_on}T00:00:00`).toLocaleDateString() : 'Not recorded'}
+                  </p>
+                  {topic.note && <p className="mt-1 text-xs text-slate-500">Note: {topic.note}</p>}
+                  {topic.approval_comment && <p className="mt-1 text-xs text-red-600">Review comment: {topic.approval_comment}</p>}
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {canVerify && (
+                    <button type="button" onClick={() => onReview(topic, 'verified')} className="rounded-lg border border-sky-200 px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50">
+                      Verify
+                    </button>
+                  )}
+                  {canFinalize && (
+                    <>
+                      <button type="button" onClick={() => onReview(topic, 'approved')} className="rounded-lg border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button>
+                      <button type="button" onClick={() => onReview(topic, 'disapproved')} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">Disapprove</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function uniqueBy<T extends object>(rows: T[], idKey: keyof T, labelKey: keyof T) {

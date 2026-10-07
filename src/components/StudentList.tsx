@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { fetchClasses, fetchStudentsPage, changeStudentStatus, hardDeleteStudent, PAGE_SIZE } from '../lib/queries'
@@ -10,6 +10,7 @@ import { EditStudentForm } from './EditStudentForm'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Pagination } from './Pagination'
 import { QueryState } from './QueryState'
+import { useDialogBehavior } from '../lib/useDialogBehavior'
 
 const STATUS_LABELS: Record<StudentStatus, string> = {
   active: 'Active',
@@ -48,6 +49,10 @@ export function StudentList({ initialSearch }: { initialSearch?: string } = {}) 
   // second tap (within the same row) opens the confirm dialog. Prevents
   // accidentally erasing a whole record while tapping near the status list.
   const [armedDeleteId, setArmedDeleteId] = useState<string | null>(null)
+
+  // Photo-viewer modal: trap focus, close on Escape, restore focus on close
+  const photoDialogRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(photoDialogRef, selectedPhoto !== null, () => setSelectedPhoto(null))
 
   // Shared cache entry — Registration form, Edit form, and this list
   // all read the same ['classes'] query instead of each fetching
@@ -421,6 +426,7 @@ export function StudentList({ initialSearch }: { initialSearch?: string } = {}) 
 
       {selectedPhoto && (
         <div
+          ref={photoDialogRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"

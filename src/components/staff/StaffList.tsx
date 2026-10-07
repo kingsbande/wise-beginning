@@ -19,6 +19,7 @@ import {
 import { TeacherDetails } from '../../types'
 import { SearchBar } from '../SearchBar'
 import { CreateStaffAccountModal } from './CreateStaffAccountModal'
+import { PageHeader } from '../PageHeader'
 
 const EMPTY_DETAILS: TeacherDetails = {
   id: '',
@@ -29,7 +30,8 @@ const EMPTY_DETAILS: TeacherDetails = {
   personal_email: null,
   emergency_contact_name: null,
   emergency_contact_phone: null,
-  highest_degree: null,
+  highest_qualification: null,
+  tcm_number: null,
   major: null,
   resume_summary: null,
   employee_id: null,
@@ -213,10 +215,18 @@ function TeacherDetailPanel({ teacherId }: { teacherId: string }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700">Highest Degree</label>
+            <label className="block text-xs font-medium text-gray-700">Highest Qualification</label>
             <input
-              value={form.highest_degree ?? ''}
-              onChange={(e) => updateField('highest_degree', e.target.value || null)}
+              value={form.highest_qualification ?? ''}
+              onChange={(e) => updateField('highest_qualification', e.target.value || null)}
+              className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700">TCM Number (Optional)</label>
+            <input
+              value={form.tcm_number ?? ''}
+              onChange={(e) => updateField('tcm_number', e.target.value || null)}
               className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
             />
           </div>
@@ -415,6 +425,7 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [roleErrors, setRoleErrors] = useState<Record<string, string>>({})
   const queryClient = useQueryClient()
 
   const { data: staff = [], isLoading } = useQuery({ queryKey: ['staff-list'], queryFn: fetchStaffList })
@@ -432,12 +443,21 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
     mutationFn: ({ staffId, role }: { staffId: string; role: 'teacher' | 'headteacher' }) => updateStaffRole(staffId, role),
     onSuccess: (confirmedRole, { staffId }) => {
       setActionError(null)
+      setRoleErrors((current) => {
+        const next = { ...current }
+        delete next[staffId]
+        return next
+      })
       queryClient.setQueryData<typeof staff>(['staff-list'], (current) =>
         current?.map((member) => member.id === staffId ? { ...member, role: confirmedRole } : member),
       )
       void queryClient.invalidateQueries({ queryKey: ['staff-list'] })
     },
-    onError: (error) => setActionError(error instanceof Error ? error.message : 'Could not update staff role.'),
+    onError: (error, { staffId }) => {
+      const message = error instanceof Error ? error.message : 'Could not update staff role.'
+      setActionError(message)
+      setRoleErrors((current) => ({ ...current, [staffId]: message }))
+    },
   })
 
   const filtered = staff.filter((s) => {
@@ -450,19 +470,15 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
-      <div className="mb-5 flex flex-col gap-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Teachers & Staff</h2>
-            <p className="text-xs text-gray-500">Manage staff access and professional details.</p>
-          </div>
+      <div>
+        <PageHeader title="Teachers & Staff" description="Manage staff access and professional details.">
           <button
             onClick={() => setShowCreateModal(true)}
             className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 sm:w-auto"
           >
             Create Staff Account
           </button>
-        </div>
+        </PageHeader>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <SearchBar value={search} onChange={setSearch} placeholder="Search by name or role..." />
           <select
@@ -514,19 +530,33 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
                   <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${s.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {s.is_active ? 'Active' : 'Inactive'}
                   </span>
-                  <select
-                    value={s.role}
-                    aria-label={`Change role for ${s.full_name}`}
-                    onChange={(event) => {
-                      setActionError(null)
-                      roleMutation.mutate({ staffId: s.id, role: event.target.value as 'teacher' | 'headteacher' })
-                    }}
-                    disabled={roleMutation.isPending}
-                    className="rounded-lg border border-gray-200 px-2 py-2 text-xs text-gray-700 focus:border-gray-900 focus:outline-none disabled:opacity-50 sm:py-1.5"
-                  >
-                    <option value="teacher">Teacher</option>
-                    <option value="headteacher">Headteacher</option>
-                  </select>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <select
+                      value={s.role}
+                      aria-label={`Change role for ${s.full_name}`}
+                      aria-describedby={roleErrors[s.id] ? `role-error-${s.id}` : undefined}
+                      aria-invalid={Boolean(roleErrors[s.id])}
+                      onChange={(event) => {
+                        setActionError(null)
+                        setRoleErrors((current) => {
+                          const next = { ...current }
+                          delete next[s.id]
+                          return next
+                        })
+                        roleMutation.mutate({ staffId: s.id, role: event.target.value as 'teacher' | 'headteacher' })
+                      }}
+                      disabled={roleMutation.isPending}
+                      className="rounded-lg border border-gray-200 px-2 py-2 text-xs text-gray-700 focus:border-gray-900 focus:outline-none disabled:opacity-50 sm:py-1.5"
+                    >
+                      <option value="teacher">Teacher</option>
+                      <option value="headteacher">Headteacher</option>
+                    </select>
+                    {roleErrors[s.id] && (
+                      <p id={`role-error-${s.id}`} role="alert" className="max-w-56 text-xs text-red-700">
+                        {roleErrors[s.id]}
+                      </p>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => {

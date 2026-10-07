@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useState } from 'react'
+import { ChangeEvent, FormEvent, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabaseClient'
 import { uploadStudentPhoto } from '../lib/cloudinary'
@@ -9,6 +9,7 @@ import { NewStudentInput } from '../types'
 import { getUserFriendlyError } from '../lib/errorMessages'
 import { logError } from '../lib/errorLogger'
 import { applyFeeStructuresToStudent } from '../lib/feesApi'
+import { useDialogBehavior } from '../lib/useDialogBehavior'
 
 const registrationSteps: Array<{ id: 'student' | 'parent' | 'details'; label: string }> = [
   { id: 'student', label: 'Student' },
@@ -78,6 +79,10 @@ export function StudentRegistrationForm({ onRegistered }: StudentRegistrationFor
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [step, setStep] = useState<'student' | 'parent' | 'details'>('student')
+
+  // Success dialog: trap focus, close on Escape, restore focus on close
+  const successDialogRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(successDialogRef, confirmation !== null, () => setConfirmation(null))
 
   function updateField<K extends keyof NewStudentInput>(key: K, value: NewStudentInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -494,9 +499,21 @@ export function StudentRegistrationForm({ onRegistered }: StudentRegistrationFor
       </form>
 
       {confirmation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-lg">
-            <h3 className="text-lg font-semibold text-slate-900">Registration Successful</h3>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onMouseDown={(e) => {
+            // Only dismiss when the backdrop itself is clicked, not the card
+            if (e.target === e.currentTarget) setConfirmation(null)
+          }}
+        >
+          <div
+            ref={successDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="registration-success-title"
+            className="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-lg"
+          >
+            <h3 id="registration-success-title" className="text-lg font-semibold text-slate-900">Registration Successful</h3>
             <p className="mt-3 text-sm text-slate-700">
               Thank you for joining {profile?.school_name ?? 'the school'},{' '}
               <span className="font-medium">{confirmation.studentName}</span> has been registered

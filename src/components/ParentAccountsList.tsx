@@ -7,6 +7,7 @@ import { ParentAccount } from '../types'
 import { SearchBar } from './SearchBar'
 import { CreateParentAccountModal } from './CreateParentAccountModal'
 import { ConfirmDialog } from './ConfirmDialog'
+import { PageHeader } from './PageHeader'
 import { Pagination } from './Pagination'
 import { getUserFriendlyError } from '../lib/errorMessages'
 
@@ -75,25 +76,22 @@ export function ParentAccountsList({ initialSearch }: { initialSearch?: string }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">Parent Accounts</h2>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <SearchBar
-            value={search}
-            onChange={(v) => {
-              setSearch(v)
-              setPage(0)
-            }}
-            placeholder="Search by name, username, or phone..."
-          />
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
-          >
-            Create Parent Account
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Parent Accounts" description="Create and manage parent login accounts.">
+        <SearchBar
+          value={search}
+          onChange={(v) => {
+            setSearch(v)
+            setPage(0)
+          }}
+          placeholder="Search by name, username, or phone..."
+        />
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="btn-primary"
+        >
+          Create Parent Account
+        </button>
+      </PageHeader>
 
       {actionError && <p className="mb-3 text-sm text-rose-600">{actionError}</p>}
 

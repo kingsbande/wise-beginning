@@ -105,6 +105,9 @@ export async function submitCurriculumTopic(id: string, taughtOn: string): Promi
     .update({
       completed: false,
       approval_status: 'pending_approval',
+      approval_comment: null,
+      reviewed_by: null,
+      reviewed_at: null,
       taught_on: taughtOn,
       updated_at: new Date().toISOString(),
     })
@@ -115,7 +118,7 @@ export async function submitCurriculumTopic(id: string, taughtOn: string): Promi
 
 export async function reviewCurriculumTopic(params: {
   id: string
-  status: Extract<CurriculumTopicApprovalStatus, 'approved' | 'disapproved'>
+  status: Extract<CurriculumTopicApprovalStatus, 'verified' | 'approved' | 'disapproved'>
   comment?: string
 }): Promise<void> {
   const comment = params.comment?.trim() ?? ''

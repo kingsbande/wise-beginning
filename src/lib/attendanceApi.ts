@@ -76,7 +76,7 @@ export async function fetchAttendanceGrid(params: {
   date: string // 'YYYY-MM-DD'
 }): Promise<AttendanceGridRow[]> {
   const [studentsResult, attendanceResult] = await Promise.all([
-    supabase.from('students').select('id, full_name').eq('class_id', params.classId).order('full_name'),
+    supabase.from('students').select('id, full_name').eq('class_id', params.classId).eq('status', 'active').order('full_name'),
     supabase
       .from('attendance_records')
       .select('student_id, status')

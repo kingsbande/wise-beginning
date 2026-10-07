@@ -120,7 +120,8 @@ export interface TeacherDetails {
   personal_email: string | null
   emergency_contact_name: string | null
   emergency_contact_phone: string | null
-  highest_degree: string | null
+  highest_qualification: string | null
+  tcm_number: string | null
   major: string | null
   resume_summary: string | null
   employee_id: string | null
@@ -166,13 +167,14 @@ export interface CurriculumTopic {
   updated_at: string
 }
 
-export type CurriculumTopicApprovalStatus = 'not_started' | 'pending_approval' | 'approved' | 'disapproved'
+export type CurriculumTopicApprovalStatus = 'not_started' | 'pending_approval' | 'verified' | 'approved' | 'disapproved'
 
 export interface CurriculumTopicProgress {
   school_id: string
   term_id: string
   teacher_id: string
   teacher_name: string
+  teacher_role: 'teacher' | 'headteacher'
   class_id: string
   class_name: string
   subject_id: string

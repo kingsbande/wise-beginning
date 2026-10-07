@@ -9,9 +9,10 @@ interface TeacherCurriculumViewProps {
   assignments: TeacherAssignment[]
   teacherId: string
   schoolId: string
+  isHeadteacher?: boolean
 }
 
-export function TeacherCurriculumView({ assignments, teacherId, schoolId }: TeacherCurriculumViewProps) {
+export function TeacherCurriculumView({ assignments, teacherId, schoolId, isHeadteacher = false }: TeacherCurriculumViewProps) {
   const queryClient = useQueryClient()
   const [termId, setTermId] = useState('')
   const [assignmentId, setAssignmentId] = useState(assignments[0]?.id ?? '')
@@ -150,7 +151,7 @@ export function TeacherCurriculumView({ assignments, teacherId, schoolId }: Teac
 
           {isTopicsLoading ? <LoadingState label="Loading topics..." /> : isError ? <EmptyState title="Topics could not load" message="Refresh the page and try again." /> : topics.length === 0 ? <EmptyState title="No topics yet" message="Add your first topic above to start tracking this subject." /> : (
             <div className="divide-y divide-slate-100">
-              {topics.map((topic) => <TopicRow key={topic.id} topic={topic} editingId={editingId} setEditingId={setEditingId} isSubmitting={submitMutation.isPending} onUpdate={(changes) => updateMutation.mutate({ id: topic.id, changes })} onSubmit={() => submitMutation.mutate({ id: topic.id, taughtOn: topic.taught_on ?? new Date().toISOString().slice(0, 10) })} onDelete={() => setTopicToDelete(topic)} />)}
+              {topics.map((topic) => <TopicRow key={topic.id} topic={topic} editingId={editingId} setEditingId={setEditingId} isSubmitting={submitMutation.isPending} isHeadteacher={isHeadteacher} onUpdate={(changes) => updateMutation.mutate({ id: topic.id, changes })} onSubmit={() => submitMutation.mutate({ id: topic.id, taughtOn: topic.taught_on ?? new Date().toISOString().slice(0, 10) })} onDelete={() => setTopicToDelete(topic)} />)}
             </div>
           )}
         </div>
@@ -169,26 +170,27 @@ export function TeacherCurriculumView({ assignments, teacherId, schoolId }: Teac
   )
 }
 
-function TopicRow({ topic, editingId, setEditingId, isSubmitting, onUpdate, onSubmit, onDelete }: { topic: CurriculumTopic; editingId: string | null; setEditingId: (id: string | null) => void; isSubmitting: boolean; onUpdate: (changes: Partial<Pick<CurriculumTopic, 'title' | 'note' | 'taught_on'>>) => void; onSubmit: () => void; onDelete: () => void }) {
+function TopicRow({ topic, editingId, setEditingId, isSubmitting, isHeadteacher, onUpdate, onSubmit, onDelete }: { topic: CurriculumTopic; editingId: string | null; setEditingId: (id: string | null) => void; isSubmitting: boolean; isHeadteacher: boolean; onUpdate: (changes: Partial<Pick<CurriculumTopic, 'title' | 'note' | 'taught_on'>>) => void; onSubmit: () => void; onDelete: () => void }) {
   const [title, setTitle] = useState(topic.title)
   const [note, setNote] = useState(topic.note ?? '')
   const isEditing = editingId === topic.id
+  const isLocked = topic.approval_status === 'pending_approval' || topic.approval_status === 'verified' || topic.approval_status === 'approved'
 
   useEffect(() => { setTitle(topic.title); setNote(topic.note ?? '') }, [topic.title, topic.note])
 
   return (
     <div className={`p-4 sm:p-5 ${topic.completed ? 'bg-emerald-50/30' : ''}`}>
       <div className="flex items-start gap-3">
-        <button type="button" onClick={onSubmit} disabled={topic.approval_status === 'pending_approval' || topic.approval_status === 'approved' || isSubmitting} aria-label="Submit topic for approval" className={`mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-md border ${topic.approval_status === 'approved' ? 'border-emerald-500 bg-emerald-500 text-white' : topic.approval_status === 'pending_approval' ? 'border-amber-400 bg-amber-100 text-amber-700' : 'border-slate-300 bg-white text-transparent hover:border-rose-400'}`}><Check className="h-4 w-4" /></button>
+        <button type="button" onClick={onSubmit} disabled={isLocked || isSubmitting} aria-label="Submit topic for approval" className={`mt-1 flex h-6 w-6 flex-none items-center justify-center rounded-md border ${topic.approval_status === 'approved' ? 'border-emerald-500 bg-emerald-500 text-white' : topic.approval_status === 'verified' ? 'border-sky-400 bg-sky-100 text-sky-700' : topic.approval_status === 'pending_approval' ? 'border-amber-400 bg-amber-100 text-amber-700' : 'border-slate-300 bg-white text-transparent hover:border-rose-400'}`}><Check className="h-4 w-4" /></button>
         <div className="min-w-0 flex-1">
-          {isEditing ? <input value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => { if (title.trim()) onUpdate({ title: title.trim() }) }} maxLength={200} className="h-9 w-full rounded-lg border border-slate-200 px-2.5 text-sm font-semibold text-slate-900 focus:border-rose-400 focus:outline-none" /> : <button type="button" onClick={() => setEditingId(topic.id)} className={`text-left text-sm font-semibold ${topic.completed ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{topic.title}</button>}
+          {isEditing && !isLocked ? <input value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => { if (title.trim()) onUpdate({ title: title.trim() }) }} maxLength={200} className="h-9 w-full rounded-lg border border-slate-200 px-2.5 text-sm font-semibold text-slate-900 focus:border-rose-400 focus:outline-none" /> : <button type="button" onClick={() => setEditingId(topic.id)} disabled={isLocked} className={`text-left text-sm font-semibold disabled:cursor-default ${topic.completed ? 'text-slate-500 line-through' : 'text-slate-900'}`}>{topic.title}</button>}
           <div className="mt-2 grid gap-2 sm:grid-cols-[150px_1fr]">
-            <input type="date" value={topic.taught_on ?? ''} onChange={(event) => onUpdate({ taught_on: event.target.value || null })} aria-label={`Date taught for ${topic.title}`} className="h-9 rounded-lg border border-slate-200 px-2 text-xs text-slate-600 focus:border-rose-400 focus:outline-none" />
-            <input value={isEditing ? note : topic.note ?? ''} onFocus={() => setEditingId(topic.id)} onChange={(event) => setNote(event.target.value)} onBlur={() => { if (isEditing) onUpdate({ note: note.trim() || null }) }} placeholder="Add a short note" maxLength={2000} className="h-9 rounded-lg border border-slate-200 px-2.5 text-xs text-slate-600 focus:border-rose-400 focus:outline-none" />
+            <input type="date" value={topic.taught_on ?? ''} disabled={isLocked} onChange={(event) => onUpdate({ taught_on: event.target.value || null })} aria-label={`Date taught for ${topic.title}`} className="h-9 rounded-lg border border-slate-200 px-2 text-xs text-slate-600 focus:border-rose-400 focus:outline-none disabled:bg-slate-50 disabled:text-slate-500" />
+            <input value={isEditing ? note : topic.note ?? ''} disabled={isLocked} onFocus={() => setEditingId(topic.id)} onChange={(event) => setNote(event.target.value)} onBlur={() => { if (isEditing) onUpdate({ note: note.trim() || null }) }} placeholder="Add a short note" maxLength={2000} className="h-9 rounded-lg border border-slate-200 px-2.5 text-xs text-slate-600 focus:border-rose-400 focus:outline-none disabled:bg-slate-50 disabled:text-slate-500" />
           </div>
-          <p className={`mt-2 text-xs ${topic.approval_status === 'pending_approval' ? 'font-semibold text-amber-700' : topic.approval_status === 'approved' ? 'text-emerald-700' : topic.approval_status === 'disapproved' ? 'text-red-600' : 'text-slate-500'}`}>{topic.approval_status === 'approved' ? 'Approved and counted as taught.' : topic.approval_status === 'pending_approval' ? 'Waiting for admin approval.' : topic.approval_status === 'disapproved' ? `Disapproved${topic.approval_comment ? `: ${topic.approval_comment}` : ''}. Update and resubmit.` : 'Not submitted for approval.'}</p>
+          <p className={`mt-2 text-xs ${topic.approval_status === 'pending_approval' ? 'font-semibold text-amber-700' : topic.approval_status === 'verified' ? 'font-semibold text-sky-700' : topic.approval_status === 'approved' ? 'text-emerald-700' : topic.approval_status === 'disapproved' ? 'text-red-600' : 'text-slate-500'}`}>{topic.approval_status === 'approved' ? 'Approved and counted as taught.' : topic.approval_status === 'verified' ? 'Verified by the headteacher; waiting for final admin approval.' : topic.approval_status === 'pending_approval' ? isHeadteacher ? 'Submitted; waiting for admin approval.' : 'Submitted; waiting for headteacher verification.' : topic.approval_status === 'disapproved' ? `Disapproved${topic.approval_comment ? `: ${topic.approval_comment}` : ''}. Update and resubmit.` : 'Not submitted for approval.'}</p>
         </div>
-        <button type="button" onClick={onDelete} aria-label={`Delete ${topic.title}`} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+        <button type="button" onClick={onDelete} disabled={isLocked} aria-label={`Delete ${topic.title}`} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>
       </div>
     </div>
   )

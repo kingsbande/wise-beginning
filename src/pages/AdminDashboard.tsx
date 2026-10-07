@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   BarChart3,
-  Bell,
   BookOpen,
   CalendarCheck,
   ChevronDown,
@@ -35,6 +34,7 @@ import { AdminReviewsView } from '../components/admin/AdminReviewsView'
 import { CurriculumProgressView } from '../components/admin/CurriculumProgressView'
 import { GlobalSearch } from '../components/GlobalSearch'
 import { supabase } from '../lib/supabaseClient'
+import { useCloseOnDesktop } from '../lib/useCloseOnDesktop'
 import logo from '../assets/logo.png'
 
 interface DashboardStats {
@@ -156,14 +156,7 @@ export function AdminDashboard() {
 
   // Close the mobile drawer automatically if the viewport grows into the
   // desktop breakpoint while it's open (e.g. rotating a tablet)
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(min-width: 1024px)')
-    const handleChange = (event: MediaQueryListEvent) => {
-      if (event.matches) setIsMobileMenuOpen(false)
-    }
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [])
+  useCloseOnDesktop(() => setIsMobileMenuOpen(false))
 
   const { malePct, femalePct } = useMemo(() => {
     const total = stats.totalStudents
@@ -271,17 +264,6 @@ export function AdminDashboard() {
 
           {/* Right cluster stays on one line; below `sm` it collapses down to just the avatar */}
           <div className="flex flex-none items-center gap-2 sm:gap-3">
-            {/* Full inline actions - shown when there's room */}
-            <button
-              type="button"
-              aria-label="Notifications"
-              className="hidden rounded-full p-2 text-slate-300 transition hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 sm:flex"
-            >
-              <Bell className="h-5 w-5" />
-            </button>
-
-            <div className="hidden h-6 w-px bg-white/10 sm:block" />
-
             <span className="hidden text-sm text-slate-200 md:inline">{profile?.full_name}</span>
 
             {profile?.avatar_url ? (
@@ -353,14 +335,6 @@ export function AdminDashboard() {
                   >
                     <SettingsIcon className="h-4 w-4 text-slate-400" />
                     Settings
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsProfileMenuOpen(false)}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <Bell className="h-4 w-4 text-slate-400" />
-                    Notifications
                   </button>
                   <button
                     type="button"

@@ -73,6 +73,7 @@ export function BalancesOverview() {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-6">
+      <h2 className="sr-only">Fee balances</h2>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
         <SearchBar
           value={search}

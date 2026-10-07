@@ -19,6 +19,7 @@ import { GradesTab } from '../../components/parent/GradesTab'
 import { ProgressReportTab } from '../../components/parent/ProgressReportTab'
 import { FeesTab } from '../../components/parent/parent-FeesTab'
 import { WeeklyReviewsTab } from '../../components/parent/WeeklyReviewsTab'
+import { useCloseOnDesktop } from '../../lib/useCloseOnDesktop'
 
 type Tab = 'grades' | 'progress' | 'fees' | 'reviews'
 
@@ -42,14 +43,7 @@ export function ParentDashboard() {
     }
   }, [isMobileMenuOpen])
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(min-width: 1024px)')
-    const handleChange = (event: MediaQueryListEvent) => {
-      if (event.matches) setIsMobileMenuOpen(false)
-    }
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [])
+  useCloseOnDesktop(() => setIsMobileMenuOpen(false))
 
   const {
     data: student,

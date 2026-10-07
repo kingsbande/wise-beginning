@@ -18,13 +18,24 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 }
 
-async function getCallerAdmin(authHeader: string | null) {
+async function getCallerAdmin(authHeader: string | null): Promise<{ school_id: string; role: string } | null> {
   if (!authHeader) return null
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } })
-  const { data: { user } } = await userClient.auth.getUser()
-  if (!user) return null
-  const { data: profile } = await supabaseAdmin.from('profiles').select('school_id, role').eq('id', user.id).single()
-  return profile?.role === 'admin' ? { school_id: profile.school_id } : null
+
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  })
+
+  const { data: { user }, error: userError } = await userClient.auth.getUser()
+  if (userError || !user) return null
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('school_id, role')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (profileError || !profile) return null
+  return profile.role === 'admin' ? { school_id: profile.school_id, role: profile.role } : { school_id: profile.school_id, role: profile.role }
 }
 
 Deno.serve(async (req: Request) => {
@@ -32,7 +43,15 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   const caller = await getCallerAdmin(req.headers.get('Authorization'))
-  if (!caller) return json({ error: 'Not authorized' }, 401)
+  if (!caller) {
+    const authHeader = req.headers.get('Authorization')
+    const authState = authHeader ? 'Authorization header present' : 'Authorization header missing'
+    return json({ error: `Not authorized: only a school admin can update staff roles. (${authState})` }, 401)
+  }
+
+  if (caller.role !== 'admin') {
+    return json({ error: `Not authorized: current profile role is '${caller.role}', not 'admin'.` }, 401)
+  }
 
   let payload: { staff_id?: string; role?: string }
   try { payload = await req.json() } catch { return json({ error: 'Invalid JSON body' }, 400) }
