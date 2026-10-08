@@ -363,6 +363,7 @@ async function getPaidAmount(feeChargeId: string): Promise<number> {
     .from('fee_payments')
     .select('amount')
     .eq('fee_charge_id', feeChargeId)
+    .is('reversed_at', null)
   if (error) throw error
   return (data ?? []).reduce((total, payment) => total + Number(payment.amount), 0)
 }
@@ -396,6 +397,7 @@ export async function fetchStudentFeeSummary(studentId: string): Promise<Student
       .from('fee_payments')
       .select('fee_charge_id, amount')
       .in('fee_charge_id', chargeIds)
+      .is('reversed_at', null)
 
     if (paymentsError) throw paymentsError
     payments = paymentsData ?? []
@@ -424,15 +426,19 @@ export async function fetchStudentFeeSummary(studentId: string): Promise<Student
 export async function fetchPaymentHistory(feeChargeId: string): Promise<FeePayment[]> {
   const { data, error } = await supabase
     .from('fee_payments')
-    .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at, recorded_by, recorder:profiles!fee_payments_recorded_by_fkey(full_name)')
+    .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at, recorded_by, reversed_at, reversed_by, reversal_reason, recorder:profiles!fee_payments_recorded_by_fkey(full_name), reverser:profiles!fee_payments_reversed_by_fkey(full_name)')
     .eq('fee_charge_id', feeChargeId)
     .order('payment_date', { ascending: false })
 
   if (error) throw error
-  const rows = (data ?? []) as unknown as Array<FeePayment & { recorder: { full_name: string } | null }>
-  return rows.map(({ recorder, ...payment }) => ({
+  const rows = (data ?? []) as unknown as Array<FeePayment & {
+    recorder: { full_name: string } | null
+    reverser: { full_name: string } | null
+  }>
+  return rows.map(({ recorder, reverser, ...payment }) => ({
     ...payment,
     posted_by_name: recorder?.full_name ?? null,
+    reversed_by_name: reverser?.full_name ?? null,
   }))
 }
 
@@ -484,12 +490,12 @@ export async function updatePayment(params: {
 
   const { data: payments, error: paymentsError } = await supabase
     .from('fee_payments')
-    .select('id, amount')
+    .select('id, amount, reversed_at')
     .eq('fee_charge_id', params.feeChargeId)
   if (paymentsError) throw paymentsError
 
   const otherPaymentsTotal = (payments ?? [])
-    .filter((payment) => payment.id !== params.paymentId)
+    .filter((payment) => payment.id !== params.paymentId && payment.reversed_at === null)
     .reduce((total, payment) => total + Number(payment.amount), 0)
   if (otherPaymentsTotal + params.amount > Number(charge.amount_due)) {
     throw new Error('The corrected payment would exceed the charge balance.')
@@ -529,11 +535,36 @@ export async function updatePayment(params: {
     })
     .eq('id', params.paymentId)
     .eq('fee_charge_id', params.feeChargeId)
+    .is('reversed_at', null)
     .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at')
     .single()
 
   if (error) throw error
   return data as FeePayment
+}
+
+export async function reversePayment(paymentId: string, reason: string): Promise<void> {
+  const normalizedReason = reason.trim()
+  if (!normalizedReason) throw new Error('A reason is required to reverse a payment.')
+
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!userData.user) throw new Error('You must be signed in to reverse a payment.')
+
+  const { data, error } = await supabase
+    .from('fee_payments')
+    .update({
+      reversal_reason: normalizedReason,
+      reversed_at: new Date().toISOString(),
+      reversed_by: userData.user.id,
+    })
+    .eq('id', paymentId)
+    .is('reversed_at', null)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('This payment has already been reversed or is no longer available.')
 }
 
 // For one-off manual adjustments (scholarship, mid-term joiner,
@@ -658,6 +689,7 @@ export async function fetchFeeBalancesPage(params: {
       .from('fee_payments')
       .select('fee_charge_id, amount')
       .in('fee_charge_id', chargeIds)
+      .is('reversed_at', null)
 
     if (paymentsError) throw paymentsError
     payments = paymentsData ?? []
@@ -746,7 +778,7 @@ export async function fetchFeeBalanceDetails(params: {
   const [paymentsResult, itemsResult, collectionsResult] = await Promise.all([
     supabase
       .from('fee_payments')
-      .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at, recorded_by, recorder:profiles!fee_payments_recorded_by_fkey(full_name)')
+      .select('id, fee_charge_id, amount, payment_date, method, note, paid_for_items, created_at, recorded_by, reversed_at, reversed_by, reversal_reason, recorder:profiles!fee_payments_recorded_by_fkey(full_name), reverser:profiles!fee_payments_reversed_by_fkey(full_name)')
       .in('fee_charge_id', chargeIds)
       .order('payment_date', { ascending: false }),
     flexibleCategoryIds.length > 0
@@ -767,10 +799,15 @@ export async function fetchFeeBalanceDetails(params: {
 
   const paymentRows = (paymentsResult.data ?? []) as unknown as Array<FeePayment & {
     recorder: { full_name: string } | null
+    reverser: { full_name: string } | null
   }>
   const paymentsByCharge = new Map<string, FeePayment[]>()
-  for (const { recorder, ...payment } of paymentRows) {
-    const normalizedPayment = { ...payment, posted_by_name: recorder?.full_name ?? null }
+  for (const { recorder, reverser, ...payment } of paymentRows) {
+    const normalizedPayment = {
+      ...payment,
+      posted_by_name: recorder?.full_name ?? null,
+      reversed_by_name: reverser?.full_name ?? null,
+    }
     paymentsByCharge.set(payment.fee_charge_id, [
       ...(paymentsByCharge.get(payment.fee_charge_id) ?? []),
       normalizedPayment,
@@ -807,7 +844,10 @@ export async function fetchFeeBalanceDetails(params: {
         .map((item) => ({ item_name: item.item_name, is_collected: true, collected_at: item.collected_at })),
     ]
     const payments = paymentsByCharge.get(charge.id) ?? []
-    const amountPaid = payments.reduce((total, payment) => total + Number(payment.amount), 0)
+    const amountPaid = payments.reduce(
+      (total, payment) => total + (payment.reversed_at ? 0 : Number(payment.amount)),
+      0,
+    )
     const amountDue = Number(charge.amount_due)
 
     return {

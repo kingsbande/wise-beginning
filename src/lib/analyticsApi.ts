@@ -48,7 +48,7 @@ export async function fetchAdminAnalyticsKpis(schoolId: string): Promise<AdminAn
       .eq('school_id', schoolId)
       .eq('date', today),
     supabase.from('fee_charges').select('amount_due').eq('school_id', schoolId),
-    supabase.from('fee_payments').select('amount').eq('school_id', schoolId),
+    supabase.from('fee_payments').select('amount').eq('school_id', schoolId).is('reversed_at', null),
   ])
 
   if (studentsResult.error) throw studentsResult.error

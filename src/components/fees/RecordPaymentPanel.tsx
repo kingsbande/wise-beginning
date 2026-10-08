@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { RotateCcw } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { searchStudentsForPicker, StudentPickerRow } from '../../lib/queries'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
@@ -13,6 +14,7 @@ import {
   fetchStudentFeeSummary,
   recordFlexiblePayment,
   recordPayment,
+  reversePayment,
   setFeeCategoryItemCollected,
   updatePayment,
 } from '../../lib/feesApi'
@@ -51,6 +53,9 @@ export function RecordPaymentPanel() {
   const [editPaymentMethod, setEditPaymentMethod] = useState('')
   const [editPaymentNote, setEditPaymentNote] = useState('')
   const [editPaymentItems, setEditPaymentItems] = useState<string[]>([])
+  const [reversingPaymentId, setReversingPaymentId] = useState<string | null>(null)
+  const [reversalReason, setReversalReason] = useState('')
+  const [reversalError, setReversalError] = useState<string | null>(null)
 
   const { data: students = [] } = useQuery({
     queryKey: ['fee-student-picker', debouncedSearch],
@@ -248,6 +253,24 @@ export function RecordPaymentPanel() {
     onError: (err: Error) => setError(err.message || 'The payment could not be updated.'),
   })
 
+  const reversePaymentMutation = useMutation({
+    mutationFn: () => reversePayment(reversingPaymentId!, reversalReason),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['student-fee-summary', selectedStudent?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['fee-payment-history', expandedHistoryId] }),
+        queryClient.invalidateQueries({ queryKey: ['fee-balances'] }),
+        queryClient.invalidateQueries({ queryKey: ['fee-balance-totals'] }),
+        queryClient.invalidateQueries({ queryKey: ['fee-balance-details'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-analytics-kpis'] }),
+      ])
+      setReversingPaymentId(null)
+      setReversalReason('')
+      setReversalError(null)
+    },
+    onError: (err: Error) => setReversalError(err.message || 'The payment could not be reversed.'),
+  })
+
   const collectionMutation = useMutation({
     mutationFn: ({ itemId, itemName, isCollected }: { itemId: string; itemName: string; isCollected: boolean }) =>
       setFeeCategoryItemCollected({
@@ -316,7 +339,7 @@ export function RecordPaymentPanel() {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-6">
-      <div className="flex items-start justify-between gap-3 sm:items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h3 className="text-base font-semibold text-gray-900">{selectedStudent.full_name}</h3>
           <p className="break-words text-xs text-gray-500">
@@ -335,13 +358,13 @@ export function RecordPaymentPanel() {
             setError(null)
             setCollectionError(null)
           }}
-          className="shrink-0 whitespace-nowrap text-xs font-medium text-gray-500 underline hover:text-gray-900"
+          className="shrink-0 whitespace-nowrap text-left text-xs font-medium text-gray-500 underline hover:text-gray-900"
         >
           Change Student
         </button>
       </div>
 
-      <div role="tablist" aria-label="Student fee tasks" className="mt-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+      <div role="tablist" aria-label="Student fee tasks" className="mt-4 grid w-full grid-cols-2 gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
         <button
           type="button"
           role="tab"
@@ -610,8 +633,8 @@ export function RecordPaymentPanel() {
           <div className="space-y-3">
             {summary.map((row) => (
               <div key={row.fee_charge_id} className="rounded-lg border border-gray-100 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-900">
                       {row.category_name} — {row.term_name}
                     </p>
@@ -759,7 +782,7 @@ export function RecordPaymentPanel() {
                                 {error && <p role="alert" className="text-xs text-red-600 sm:col-span-2 xl:col-span-4">{error}</p>}
                               </div>
                             ) : (
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                 <div className="min-w-0">
                                   <p className="text-gray-800">
                                     Payment date: {p.payment_date} · Amount: {p.amount.toLocaleString()}{p.method ? ` · ${p.method}` : ''}
@@ -771,8 +794,63 @@ export function RecordPaymentPanel() {
                                     <p className="mt-1 text-gray-600">Paid for: {p.paid_for_items.join(', ')}</p>
                                   )}
                                   {p.note && <p className="mt-1 text-gray-500">Note: {p.note}</p>}
+                                  {p.reversed_at && (
+                                    <p className="mt-1 text-amber-700">
+                                      Reversed on {new Date(p.reversed_at).toLocaleString()} by {p.reversed_by_name ?? 'User unavailable'}
+                                      {p.reversal_reason ? ` · ${p.reversal_reason}` : ''}
+                                    </p>
+                                  )}
                                 </div>
-                                <button type="button" onClick={() => { setEditingPaymentId(p.id); setEditPaymentAmount(String(p.amount)); setEditPaymentDate(p.payment_date); setEditPaymentMethod(p.method ?? ''); setEditPaymentNote(p.note ?? ''); setEditPaymentItems(p.paid_for_items ?? []); setError(null) }} className="shrink-0 font-medium text-blue-600 underline hover:text-blue-800">Edit</button>
+                                <div className="shrink-0 flex flex-wrap items-center gap-2">
+                                  {!p.reversed_at && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReversingPaymentId(p.id)
+                                        setReversalReason('')
+                                        setReversalError(null)
+                                      }}
+                                      className="inline-flex items-center gap-1 font-medium text-amber-700 underline hover:text-amber-900"
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                      Reverse
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {reversingPaymentId === p.id && !p.reversed_at && (
+                              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                                <p className="text-xs font-medium text-amber-900">Reverse this payment</p>
+                                <textarea
+                                  value={reversalReason}
+                                  onChange={(event) => setReversalReason(event.target.value)}
+                                  rows={2}
+                                  placeholder="Why is this payment being reversed?"
+                                  className="mt-2 w-full rounded border border-amber-300 bg-white px-2 py-1.5 text-xs text-gray-700 focus:border-amber-500 focus:outline-none"
+                                />
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void reversePaymentMutation.mutate()}
+                                    disabled={reversePaymentMutation.isPending || !reversalReason.trim()}
+                                    className="rounded bg-amber-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {reversePaymentMutation.isPending ? 'Reversing...' : 'Confirm reversal'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReversingPaymentId(null)
+                                      setReversalReason('')
+                                      setReversalError(null)
+                                    }}
+                                    className="rounded border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-800 hover:bg-amber-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                                {reversalError && <p role="alert" className="mt-2 text-xs text-red-600">{reversalError}</p>}
                               </div>
                             )}
                           </li>
