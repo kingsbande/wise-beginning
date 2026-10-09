@@ -100,6 +100,54 @@ export interface StudentsPageResult {
   total: number
 }
 
+export interface StudentGenderCountsParams {
+  search: string
+  classId: string
+  dateJoinedFrom: string
+  status: StudentStatus | 'all'
+}
+
+export interface StudentGenderCounts {
+  male: number
+  female: number
+}
+
+async function fetchStudentGenderCount(
+  params: StudentGenderCountsParams,
+  gender: Student['gender'],
+): Promise<number> {
+  let query = supabase
+    .from('students')
+    .select('id', { count: 'exact', head: true })
+    .eq('class_id', params.classId)
+    .eq('gender', gender)
+
+  const term = sanitizeForOrFilter(params.search)
+  if (term !== '') {
+    query = query.or(`full_name.ilike.%${term}%,admission_number.ilike.%${term}%`)
+  }
+  if (params.dateJoinedFrom !== '') {
+    query = query.gte('date_joined', params.dateJoinedFrom)
+  }
+  if (params.status !== 'all') {
+    query = query.eq('status', params.status)
+  }
+
+  const { count, error } = await query
+  if (error) throw error
+  return count ?? 0
+}
+
+export async function fetchStudentGenderCounts(
+  params: StudentGenderCountsParams,
+): Promise<StudentGenderCounts> {
+  const [male, female] = await Promise.all([
+    fetchStudentGenderCount(params, 'male'),
+    fetchStudentGenderCount(params, 'female'),
+  ])
+  return { male, female }
+}
+
 export async function fetchStudentsPage({
   page,
   search,

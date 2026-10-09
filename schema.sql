@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict XozcFOEZGw25NgmaSUXlJApi3RNr5JKPlSBb9EloEpqbP05xkqvxa2oIJI5icwZ
+\restrict Wdgcf69A1lODiNk8Eo9RiUbjpmslGwLitkkNW78xeShSHA0YiFqbduzf7CIEk0K
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.6
@@ -153,6 +153,175 @@ $$;
 ALTER FUNCTION public.create_promotion_run(p_source_academic_year text, p_target_academic_year text, p_final_term_id uuid, p_minimum_average numeric) OWNER TO postgres;
 
 --
+-- Name: enforce_curriculum_topic_approval_workflow(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.enforce_curriculum_topic_approval_workflow() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+    actor_id uuid := auth.uid();
+    actor_role text;
+    author_role text;
+BEGIN
+    -- Allow trusted database maintenance and service-role jobs without a user JWT.
+    IF actor_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT p.role
+    INTO actor_role
+    FROM public.profiles p
+    WHERE p.id = actor_id;
+
+    IF actor_role IS NULL THEN
+        RAISE EXCEPTION 'A staff profile is required to change curriculum topics';
+    END IF;
+
+    IF TG_OP = 'INSERT' THEN
+        IF actor_role NOT IN ('teacher', 'headteacher') THEN
+            RAISE EXCEPTION 'Only teachers and headteachers can add curriculum topics';
+        END IF;
+        NEW.approval_status := 'not_started';
+        NEW.completed := false;
+        NEW.approval_comment := NULL;
+        NEW.reviewed_by := NULL;
+        NEW.reviewed_at := NULL;
+        RETURN NEW;
+    END IF;
+
+    IF actor_role IN ('teacher', 'headteacher') AND OLD.teacher_id = actor_id THEN
+        IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.created_at)
+            IS DISTINCT FROM
+           ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.created_at) THEN
+            RAISE EXCEPTION 'Topic ownership and assignment cannot be changed';
+        END IF;
+        IF OLD.approval_status IN ('verified', 'approved')
+            OR (OLD.approval_status = 'pending_approval' AND actor_role <> 'headteacher') THEN
+            RAISE EXCEPTION 'Verified or approved topics cannot be changed';
+        END IF;
+
+        IF NEW.approval_status IS DISTINCT FROM OLD.approval_status THEN
+            IF OLD.approval_status NOT IN ('not_started', 'disapproved')
+                OR NEW.approval_status <> 'pending_approval' THEN
+                RAISE EXCEPTION 'Teachers may only submit or resubmit topics for review';
+            END IF;
+            IF NEW.taught_on IS NULL THEN
+                RAISE EXCEPTION 'A taught date is required before submitting a topic';
+            END IF;
+            NEW.completed := false;
+            NEW.approval_comment := NULL;
+            NEW.reviewed_by := NULL;
+            NEW.reviewed_at := NULL;
+        ELSE
+            NEW.completed := false;
+            NEW.approval_comment := OLD.approval_comment;
+            NEW.reviewed_by := OLD.reviewed_by;
+            NEW.reviewed_at := OLD.reviewed_at;
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF actor_role = 'headteacher' THEN
+        IF OLD.approval_status <> 'pending_approval' OR NEW.approval_status <> 'verified' THEN
+            RAISE EXCEPTION 'Headteachers may only verify submitted topics';
+        END IF;
+        IF OLD.teacher_id = actor_id THEN
+            RAISE EXCEPTION 'Headteachers cannot verify their own topics';
+        END IF;
+        IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.title, NEW.note, NEW.taught_on, NEW.created_at)
+            IS DISTINCT FROM
+           ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.title, OLD.note, OLD.taught_on, OLD.created_at) THEN
+            RAISE EXCEPTION 'Headteachers may not edit topic content while verifying';
+        END IF;
+        NEW.completed := false;
+        NEW.approval_comment := NULL;
+        NEW.reviewed_by := actor_id;
+        NEW.reviewed_at := now();
+        RETURN NEW;
+    END IF;
+
+    IF actor_role = 'admin' THEN
+        SELECT p.role
+        INTO author_role
+        FROM public.profiles p
+        WHERE p.id = OLD.teacher_id;
+
+        IF NOT (
+            OLD.approval_status = 'verified'
+            OR (OLD.approval_status = 'pending_approval' AND author_role = 'headteacher')
+        ) OR NEW.approval_status NOT IN ('approved', 'disapproved') THEN
+            RAISE EXCEPTION 'Admins may only finalize verified topics or headteacher-submitted topics';
+        END IF;
+          IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.title, NEW.note, NEW.taught_on, NEW.created_at)
+            IS DISTINCT FROM
+              ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.title, OLD.note, OLD.taught_on, OLD.created_at) THEN
+            RAISE EXCEPTION 'Admins may not edit topic content while reviewing';
+        END IF;
+        IF NEW.approval_status = 'disapproved' AND NULLIF(btrim(NEW.approval_comment), '') IS NULL THEN
+            RAISE EXCEPTION 'A reason is required when disapproving a topic';
+        END IF;
+        NEW.completed := NEW.approval_status = 'approved';
+        IF NEW.approval_status = 'approved' THEN
+            NEW.approval_comment := NULL;
+        END IF;
+        NEW.reviewed_by := actor_id;
+        NEW.reviewed_at := now();
+        RETURN NEW;
+    END IF;
+
+    RAISE EXCEPTION 'This role cannot review curriculum topics';
+END;
+$$;
+
+
+ALTER FUNCTION public.enforce_curriculum_topic_approval_workflow() OWNER TO postgres;
+
+--
+-- Name: enforce_fee_payment_reversal(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.enforce_fee_payment_reversal() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+    actor_id uuid := auth.uid();
+BEGIN
+    IF actor_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    IF OLD.reversed_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A reversed payment is locked and cannot be changed';
+    END IF;
+
+    IF NEW.reversal_reason IS DISTINCT FROM OLD.reversal_reason THEN
+        IF NULLIF(btrim(NEW.reversal_reason), '') IS NULL THEN
+            RAISE EXCEPTION 'A reason is required to reverse a payment';
+        END IF;
+        IF ROW(NEW.id, NEW.school_id, NEW.fee_charge_id, NEW.amount, NEW.payment_date, NEW.method, NEW.note, NEW.recorded_by, NEW.created_at, NEW.paid_for_items)
+            IS DISTINCT FROM
+           ROW(OLD.id, OLD.school_id, OLD.fee_charge_id, OLD.amount, OLD.payment_date, OLD.method, OLD.note, OLD.recorded_by, OLD.created_at, OLD.paid_for_items) THEN
+            RAISE EXCEPTION 'The original payment cannot be edited while reversing it';
+        END IF;
+        NEW.reversal_reason := btrim(NEW.reversal_reason);
+        NEW.reversed_at := now();
+        NEW.reversed_by := actor_id;
+    ELSIF NEW.reversed_at IS DISTINCT FROM OLD.reversed_at
+        OR NEW.reversed_by IS DISTINCT FROM OLD.reversed_by THEN
+        RAISE EXCEPTION 'Use the audited reversal action to reverse a payment';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.enforce_fee_payment_reversal() OWNER TO postgres;
+
+--
 -- Name: get_fee_balance_totals(uuid, uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -181,6 +350,7 @@ CREATE FUNCTION public.get_fee_balance_totals(p_term_id uuid, p_class_id uuid, p
         FROM public.fee_payments payment
         JOIN matching_charges charge ON charge.id = payment.fee_charge_id
         WHERE payment.school_id = public.user_school_id(auth.uid())
+          AND payment.reversed_at IS NULL
         GROUP BY payment.fee_charge_id
     ),
     totals AS (
@@ -249,133 +419,21 @@ ALTER FUNCTION public.parent_school_id(uid uuid) OWNER TO postgres;
 CREATE FUNCTION public.prevent_profile_privilege_escalation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-begin
-  new.school_id := old.school_id;
-  new.role := old.role;
-  new.username := old.username;
-  return new;
-end;
-$$;
-
-
-ALTER FUNCTION public.prevent_profile_privilege_escalation() OWNER TO postgres;
-
---
--- Name: enforce_curriculum_topic_approval_workflow(); Type: FUNCTION; Schema: public; Owner: postgres
---
-
-CREATE FUNCTION public.enforce_curriculum_topic_approval_workflow() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $$
-DECLARE
-    actor_id uuid := auth.uid();
-    actor_role text;
-    author_role text;
 BEGIN
-    IF actor_id IS NULL THEN
-        RETURN NEW;
-    END IF;
+  -- Regular authenticated users cannot change protected profile fields.
+  -- Trusted Edge Functions using the service-role key can.
+  IF current_user <> 'service_role' THEN
+    NEW.school_id := OLD.school_id;
+    NEW.role := OLD.role;
+    NEW.username := OLD.username;
+  END IF;
 
-    SELECT p.role INTO actor_role
-    FROM public.profiles p
-    WHERE p.id = actor_id;
-
-    IF actor_role IS NULL THEN
-        RAISE EXCEPTION 'A staff profile is required to change curriculum topics';
-    END IF;
-
-    IF TG_OP = 'INSERT' THEN
-        IF actor_role NOT IN ('teacher', 'headteacher') THEN
-            RAISE EXCEPTION 'Only teachers and headteachers can add curriculum topics';
-        END IF;
-        NEW.approval_status := 'not_started';
-        NEW.completed := false;
-        NEW.approval_comment := NULL;
-        NEW.reviewed_by := NULL;
-        NEW.reviewed_at := NULL;
-        RETURN NEW;
-    END IF;
-
-    IF actor_role IN ('teacher', 'headteacher') AND OLD.teacher_id = actor_id THEN
-        IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.created_at)
-            IS DISTINCT FROM
-           ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.created_at) THEN
-            RAISE EXCEPTION 'Topic ownership and assignment cannot be changed';
-        END IF;
-        IF OLD.approval_status IN ('pending_approval', 'verified', 'approved') THEN
-            RAISE EXCEPTION 'Submitted topics cannot be changed while awaiting review or after approval';
-        END IF;
-        IF NEW.approval_status IS DISTINCT FROM OLD.approval_status THEN
-            IF OLD.approval_status NOT IN ('not_started', 'disapproved') OR NEW.approval_status <> 'pending_approval' THEN
-                RAISE EXCEPTION 'Teachers may only submit or resubmit topics for review';
-            END IF;
-            IF NEW.taught_on IS NULL THEN
-                RAISE EXCEPTION 'A taught date is required before submitting a topic';
-            END IF;
-            NEW.completed := false;
-            NEW.approval_comment := NULL;
-            NEW.reviewed_by := NULL;
-            NEW.reviewed_at := NULL;
-        ELSE
-            NEW.completed := false;
-            NEW.approval_comment := OLD.approval_comment;
-            NEW.reviewed_by := OLD.reviewed_by;
-            NEW.reviewed_at := OLD.reviewed_at;
-        END IF;
-        RETURN NEW;
-    END IF;
-
-    IF actor_role = 'headteacher' THEN
-        IF OLD.approval_status <> 'pending_approval' OR NEW.approval_status <> 'verified' THEN
-            RAISE EXCEPTION 'Headteachers may only verify submitted topics';
-        END IF;
-        IF OLD.teacher_id = actor_id THEN
-            RAISE EXCEPTION 'Headteachers cannot verify their own topics';
-        END IF;
-        IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.title, NEW.note, NEW.taught_on, NEW.created_at)
-            IS DISTINCT FROM
-           ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.title, OLD.note, OLD.taught_on, OLD.created_at) THEN
-            RAISE EXCEPTION 'Headteachers may not edit topic content while verifying';
-        END IF;
-        NEW.completed := false;
-        NEW.approval_comment := NULL;
-        NEW.reviewed_by := actor_id;
-        NEW.reviewed_at := now();
-        RETURN NEW;
-    END IF;
-
-    IF actor_role = 'admin' THEN
-        SELECT p.role INTO author_role
-        FROM public.profiles p
-        WHERE p.id = OLD.teacher_id;
-        IF NOT (OLD.approval_status = 'verified' OR (OLD.approval_status = 'pending_approval' AND author_role = 'headteacher'))
-            OR NEW.approval_status NOT IN ('approved', 'disapproved') THEN
-            RAISE EXCEPTION 'Admins may only finalize verified topics or headteacher-submitted topics';
-        END IF;
-          IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.title, NEW.note, NEW.taught_on, NEW.created_at)
-            IS DISTINCT FROM
-              ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.title, OLD.note, OLD.taught_on, OLD.created_at) THEN
-            RAISE EXCEPTION 'Admins may not edit topic content while reviewing';
-        END IF;
-        IF NEW.approval_status = 'disapproved' AND NULLIF(btrim(NEW.approval_comment), '') IS NULL THEN
-            RAISE EXCEPTION 'A reason is required when disapproving a topic';
-        END IF;
-        NEW.completed := NEW.approval_status = 'approved';
-        IF NEW.approval_status = 'approved' THEN
-            NEW.approval_comment := NULL;
-        END IF;
-        NEW.reviewed_by := actor_id;
-        NEW.reviewed_at := now();
-        RETURN NEW;
-    END IF;
-
-    RAISE EXCEPTION 'This role cannot review curriculum topics';
+  RETURN NEW;
 END;
 $$;
 
 
-ALTER FUNCTION public.enforce_curriculum_topic_approval_workflow() OWNER TO postgres;
+ALTER FUNCTION public.prevent_profile_privilege_escalation() OWNER TO postgres;
 
 --
 -- Name: rls_auto_enable(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -676,8 +734,8 @@ CREATE VIEW public.curriculum_topic_progress WITH (security_invoker='false') AS
      JOIN public.profiles p ON ((p.id = ct.teacher_id)))
      JOIN public.classes c ON ((c.id = ct.class_id)))
      JOIN public.subjects s ON ((s.id = ct.subject_id)))
-    WHERE (ct.school_id = COALESCE(public.user_school_id(auth.uid()), public.headteacher_school_id(auth.uid())))
-    GROUP BY ct.school_id, ct.term_id, ct.teacher_id, p.full_name, p.role, ct.class_id, c.name, ct.subject_id, s.name;
+  WHERE (ct.school_id = COALESCE(public.user_school_id(auth.uid()), public.headteacher_school_id(auth.uid())))
+  GROUP BY ct.school_id, ct.term_id, ct.teacher_id, p.full_name, p.role, ct.class_id, c.name, ct.subject_id, s.name;
 
 
 ALTER VIEW public.curriculum_topic_progress OWNER TO postgres;
@@ -792,7 +850,11 @@ CREATE TABLE public.fee_payments (
     recorded_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     paid_for_items text[] DEFAULT '{}'::text[] NOT NULL,
-    CONSTRAINT fee_payments_amount_check CHECK ((amount > (0)::numeric))
+    reversed_at timestamp with time zone,
+    reversed_by uuid,
+    reversal_reason text,
+    CONSTRAINT fee_payments_amount_check CHECK ((amount > (0)::numeric)),
+    CONSTRAINT fee_payments_reversal_fields_check CHECK ((((reversed_at IS NULL) AND (reversed_by IS NULL) AND (reversal_reason IS NULL)) OR ((reversed_at IS NOT NULL) AND (reversed_by IS NOT NULL) AND (NULLIF(btrim(reversal_reason), ''::text) IS NOT NULL))))
 );
 
 
@@ -1128,7 +1190,6 @@ CREATE TABLE public.teacher_details (
     emergency_contact_name text,
     emergency_contact_phone text,
     highest_qualification text,
-    tcm_number text,
     major text,
     resume_summary text,
     employee_id text,
@@ -1137,11 +1198,19 @@ CREATE TABLE public.teacher_details (
     salary_grade text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tcm_number text,
     CONSTRAINT teacher_details_contract_type_check CHECK ((contract_type = ANY (ARRAY['full_time'::text, 'part_time'::text, 'substitute'::text])))
 );
 
 
 ALTER TABLE public.teacher_details OWNER TO postgres;
+
+--
+-- Name: COLUMN teacher_details.tcm_number; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.teacher_details.tcm_number IS 'Optional Teacher Council of Malawi registration number.';
+
 
 --
 -- Name: terms; Type: TABLE; Schema: public; Owner: postgres
@@ -1965,17 +2034,24 @@ CREATE INDEX idx_weekly_performance_reviews_student ON public.weekly_performance
 
 
 --
--- Name: profiles trg_prevent_profile_privilege_escalation; Type: TRIGGER; Schema: public; Owner: postgres
---
-
-CREATE TRIGGER trg_prevent_profile_privilege_escalation BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.prevent_profile_privilege_escalation();
-
-
---
 -- Name: curriculum_topics trg_enforce_curriculum_topic_approval_workflow; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER trg_enforce_curriculum_topic_approval_workflow BEFORE INSERT OR UPDATE ON public.curriculum_topics FOR EACH ROW EXECUTE FUNCTION public.enforce_curriculum_topic_approval_workflow();
+
+
+--
+-- Name: fee_payments trg_enforce_fee_payment_reversal; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_enforce_fee_payment_reversal BEFORE UPDATE ON public.fee_payments FOR EACH ROW EXECUTE FUNCTION public.enforce_fee_payment_reversal();
+
+
+--
+-- Name: profiles trg_prevent_profile_privilege_escalation; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_prevent_profile_privilege_escalation BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.prevent_profile_privilege_escalation();
 
 
 --
@@ -2231,6 +2307,14 @@ ALTER TABLE ONLY public.fee_payments
 
 ALTER TABLE ONLY public.fee_payments
     ADD CONSTRAINT fee_payments_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: fee_payments fee_payments_reversed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.fee_payments
+    ADD CONSTRAINT fee_payments_reversed_by_fkey FOREIGN KEY (reversed_by) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -2761,17 +2845,17 @@ CREATE POLICY attendance_admin_all ON public.attendance_records USING ((school_i
 
 
 --
--- Name: attendance_records attendance_headteacher_select_own_school; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY attendance_headteacher_select_own_school ON public.attendance_records FOR SELECT USING ((school_id = public.headteacher_school_id(auth.uid())));
-
-
---
 -- Name: attendance_records attendance_headteacher_insert_own_school; Type: POLICY; Schema: public; Owner: postgres
 --
 
 CREATE POLICY attendance_headteacher_insert_own_school ON public.attendance_records FOR INSERT WITH CHECK ((school_id = public.headteacher_school_id(auth.uid())));
+
+
+--
+-- Name: attendance_records attendance_headteacher_select_own_school; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY attendance_headteacher_select_own_school ON public.attendance_records FOR SELECT USING ((school_id = public.headteacher_school_id(auth.uid())));
 
 
 --
@@ -2909,55 +2993,37 @@ ALTER TABLE public.curriculum_topics ENABLE ROW LEVEL SECURITY;
 -- Name: curriculum_topics curriculum_topics_admin_all; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY curriculum_topics_admin_all ON public.curriculum_topics
-USING (EXISTS (
-    SELECT 1 FROM public.profiles p
-    WHERE p.id = auth.uid()
-        AND p.school_id = curriculum_topics.school_id
-        AND p.role = 'admin'
-))
-WITH CHECK (
-    EXISTS (
-        SELECT 1 FROM public.profiles p
-        WHERE p.id = auth.uid()
-            AND p.school_id = curriculum_topics.school_id
-            AND p.role = 'admin'
-    )
-    AND EXISTS (
-        SELECT 1 FROM public.terms t
-        WHERE t.id = curriculum_topics.term_id
-            AND t.school_id = curriculum_topics.school_id
-    )
-    AND EXISTS (
-        SELECT 1 FROM public.teacher_assignments ta
-        WHERE ta.school_id = curriculum_topics.school_id
-            AND ta.teacher_id = curriculum_topics.teacher_id
-            AND ta.class_id = curriculum_topics.class_id
-            AND ta.subject_id = curriculum_topics.subject_id
-    )
-);
+CREATE POLICY curriculum_topics_admin_all ON public.curriculum_topics TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.profiles p
+  WHERE ((p.id = auth.uid()) AND (p.school_id = curriculum_topics.school_id) AND (p.role = 'admin'::text))))) WITH CHECK (((EXISTS ( SELECT 1
+   FROM public.profiles p
+  WHERE ((p.id = auth.uid()) AND (p.school_id = curriculum_topics.school_id) AND (p.role = 'admin'::text)))) AND (EXISTS ( SELECT 1
+   FROM public.terms t
+  WHERE ((t.id = curriculum_topics.term_id) AND (t.school_id = curriculum_topics.school_id)))) AND (EXISTS ( SELECT 1
+   FROM public.teacher_assignments ta
+  WHERE ((ta.school_id = curriculum_topics.school_id) AND (ta.teacher_id = curriculum_topics.teacher_id) AND (ta.class_id = curriculum_topics.class_id) AND (ta.subject_id = curriculum_topics.subject_id))))));
 
 
 --
 -- Name: curriculum_topics curriculum_topics_headteacher_select; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY curriculum_topics_headteacher_select ON public.curriculum_topics FOR SELECT USING ((school_id = public.headteacher_school_id(auth.uid())));
+CREATE POLICY curriculum_topics_headteacher_select ON public.curriculum_topics FOR SELECT TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid())));
 
 
 --
 -- Name: curriculum_topics curriculum_topics_headteacher_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY curriculum_topics_headteacher_update ON public.curriculum_topics FOR UPDATE USING ((school_id = public.headteacher_school_id(auth.uid()))) WITH CHECK ((school_id = public.headteacher_school_id(auth.uid())));
+CREATE POLICY curriculum_topics_headteacher_update ON public.curriculum_topics FOR UPDATE TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid()))) WITH CHECK ((school_id = public.headteacher_school_id(auth.uid())));
 
 
 --
 -- Name: curriculum_topics curriculum_topics_teacher_delete; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY curriculum_topics_teacher_delete ON public.curriculum_topics FOR DELETE USING (((teacher_id = auth.uid()) AND (approval_status = ANY (ARRAY['not_started'::text, 'disapproved'::text])) AND (EXISTS ( SELECT 1
-    FROM public.teacher_assignments ta
+CREATE POLICY curriculum_topics_teacher_delete ON public.curriculum_topics FOR DELETE TO authenticated USING (((teacher_id = auth.uid()) AND (approval_status = ANY (ARRAY['not_started'::text, 'disapproved'::text])) AND (EXISTS ( SELECT 1
+   FROM public.teacher_assignments ta
   WHERE ((ta.school_id = curriculum_topics.school_id) AND (ta.teacher_id = auth.uid()) AND (ta.class_id = curriculum_topics.class_id) AND (ta.subject_id = curriculum_topics.subject_id))))));
 
 
@@ -3551,6 +3617,13 @@ CREATE POLICY subjects_select_teacher_own_school ON public.subjects FOR SELECT U
 
 
 --
+-- Name: subjects subjects_select_headteacher_own_school; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY subjects_select_headteacher_own_school ON public.subjects FOR SELECT TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid())));
+
+
+--
 -- Name: teacher_assignments; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -3624,6 +3697,13 @@ CREATE POLICY terms_all_own_school ON public.terms USING ((school_id = public.us
 
 
 --
+-- Name: terms terms_select_headteacher_own_school; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY terms_select_headteacher_own_school ON public.terms FOR SELECT TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid())));
+
+
+--
 -- Name: terms terms_select_parent_own_school; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -3635,13 +3715,6 @@ CREATE POLICY terms_select_parent_own_school ON public.terms FOR SELECT USING ((
 --
 
 CREATE POLICY terms_select_teacher_own_school ON public.terms FOR SELECT USING ((school_id = public.teacher_school_id(auth.uid())));
-
-
---
--- Name: terms terms_select_headteacher_own_school; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY terms_select_headteacher_own_school ON public.terms FOR SELECT USING ((school_id = public.headteacher_school_id(auth.uid())));
 
 
 --
@@ -3852,6 +3925,24 @@ REVOKE ALL ON FUNCTION public.create_promotion_run(p_source_academic_year text, 
 GRANT ALL ON FUNCTION public.create_promotion_run(p_source_academic_year text, p_target_academic_year text, p_final_term_id uuid, p_minimum_average numeric) TO anon;
 GRANT ALL ON FUNCTION public.create_promotion_run(p_source_academic_year text, p_target_academic_year text, p_final_term_id uuid, p_minimum_average numeric) TO authenticated;
 GRANT ALL ON FUNCTION public.create_promotion_run(p_source_academic_year text, p_target_academic_year text, p_final_term_id uuid, p_minimum_average numeric) TO service_role;
+
+
+--
+-- Name: FUNCTION enforce_curriculum_topic_approval_workflow(); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.enforce_curriculum_topic_approval_workflow() TO anon;
+GRANT ALL ON FUNCTION public.enforce_curriculum_topic_approval_workflow() TO authenticated;
+GRANT ALL ON FUNCTION public.enforce_curriculum_topic_approval_workflow() TO service_role;
+
+
+--
+-- Name: FUNCTION enforce_fee_payment_reversal(); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.enforce_fee_payment_reversal() TO anon;
+GRANT ALL ON FUNCTION public.enforce_fee_payment_reversal() TO authenticated;
+GRANT ALL ON FUNCTION public.enforce_fee_payment_reversal() TO service_role;
 
 
 --
@@ -4315,5 +4406,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict XozcFOEZGw25NgmaSUXlJApi3RNr5JKPlSBb9EloEpqbP05xkqvxa2oIJI5icwZ
-
+\unrestrict Wdgcf69A1lODiNk8Eo9RiUbjpmslGwLitkkNW78xeShSHA0YiFqbduzf7CIEk0K

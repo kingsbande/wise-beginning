@@ -1,7 +1,14 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
-import { fetchClasses, fetchStudentsPage, changeStudentStatus, hardDeleteStudent, PAGE_SIZE } from '../lib/queries'
+import {
+  fetchClasses,
+  fetchStudentGenderCounts,
+  fetchStudentsPage,
+  changeStudentStatus,
+  hardDeleteStudent,
+  PAGE_SIZE,
+} from '../lib/queries'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { Student, StudentStatus } from '../types'
 import { AlertTriangle } from 'lucide-react'
@@ -81,6 +88,18 @@ export function StudentList({ initialSearch }: { initialSearch?: string } = {}) 
 
   const students = data?.students ?? []
   const total = data?.total ?? 0
+
+  const genderCountsQuery = useQuery({
+    queryKey: ['students', 'class-gender-counts', selectedClassId, debouncedSearch, dateJoinedFilter, statusFilter],
+    queryFn: () =>
+      fetchStudentGenderCounts({
+        classId: selectedClassId,
+        search: debouncedSearch,
+        dateJoinedFrom: dateJoinedFilter,
+        status: statusFilter,
+      }),
+    enabled: selectedClassId !== 'all',
+  })
 
   const statusChangeMutation = useMutation({
     mutationFn: (params: { student: Student; newStatus: StudentStatus }) =>
@@ -185,6 +204,46 @@ export function StudentList({ initialSearch }: { initialSearch?: string } = {}) 
           )}
         </div>
       </div>
+
+      {selectedClassId !== 'all' && (
+        <section
+          aria-label="Student totals for selected class"
+          aria-live="polite"
+          className="mb-4 border-y border-gray-200"
+        >
+          <p className="pt-3 text-sm font-medium text-gray-700">
+            {classes.find((classroom) => classroom.id === selectedClassId)?.name ?? 'Selected class'}
+          </p>
+          <dl className="grid grid-cols-1 divide-y divide-gray-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="py-3 sm:px-4 sm:first:pl-0">
+              <dt className="text-xs font-medium text-gray-500">Total students</dt>
+              <dd className="mt-1 text-lg font-semibold text-gray-900">
+                {isFetching ? '—' : total.toLocaleString()}
+              </dd>
+            </div>
+            <div className="py-3 sm:px-4">
+              <dt className="text-xs font-medium text-gray-500">Girls</dt>
+              <dd className="mt-1 text-lg font-semibold text-emerald-700">
+                {genderCountsQuery.isError
+                  ? 'Unavailable'
+                  : genderCountsQuery.isLoading
+                    ? '—'
+                    : (genderCountsQuery.data?.female ?? 0).toLocaleString()}
+              </dd>
+            </div>
+            <div className="py-3 sm:px-4 sm:last:pr-0">
+              <dt className="text-xs font-medium text-gray-500">Boys</dt>
+              <dd className="mt-1 text-lg font-semibold text-rose-700">
+                {genderCountsQuery.isError
+                  ? 'Unavailable'
+                  : genderCountsQuery.isLoading
+                    ? '—'
+                    : (genderCountsQuery.data?.male ?? 0).toLocaleString()}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       <QueryState
         isLoading={isLoading}

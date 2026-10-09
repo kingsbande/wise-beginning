@@ -181,7 +181,7 @@ function TopicGroup({ title, topics, completed = false, reviewerRole, reviewerId
                   <p className="mt-1 text-xs text-slate-600">
                     Date taught: {topic.taught_on ? new Date(`${topic.taught_on}T00:00:00`).toLocaleDateString() : 'Not recorded'}
                   </p>
-                  {topic.note && <p className="mt-1 text-xs text-slate-500">Note: {topic.note}</p>}
+                  {topic.note && <p className="mt-1 max-w-prose whitespace-pre-wrap break-words text-xs text-slate-600"><span className="font-semibold">Teacher note:</span> {topic.note}</p>}
                   {topic.approval_comment && <p className="mt-1 text-xs text-red-600">Review comment: {topic.approval_comment}</p>}
                 </div>
                 <div className="flex shrink-0 gap-2">

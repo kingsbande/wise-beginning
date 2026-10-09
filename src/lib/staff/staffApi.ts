@@ -151,27 +151,34 @@ export async function deleteTeacherCertification(id: string): Promise<void> {
 export async function fetchTeacherAssignments(teacherId: string): Promise<TeacherAssignment[]> {
   const { data, error } = await supabase
     .from('teacher_assignments')
-    .select('id, teacher_id, class_id, subject_id, classes ( name ), subjects ( name )')
+    .select('id, teacher_id, class_id, subject_id')
     .eq('teacher_id', teacherId)
 
   if (error) throw error
 
-  const rows = data as unknown as Array<{
-    id: string
-    teacher_id: string
-    class_id: string
-    subject_id: string
-    classes: { name: string } | null
-    subjects: { name: string } | null
-  }>
+  const rows = data ?? []
+  if (!rows.length) return []
 
-  return rows.map((r) => ({
-    id: r.id,
-    teacher_id: r.teacher_id,
-    class_id: r.class_id,
-    subject_id: r.subject_id,
-    class_name: r.classes?.name ?? 'Unknown class',
-    subject_name: r.subjects?.name ?? 'Unknown subject',
+  const classIds = [...new Set(rows.map((row) => row.class_id))]
+  const subjectIds = [...new Set(rows.map((row) => row.subject_id))]
+  const [classesResult, subjectsResult] = await Promise.all([
+    supabase.from('classes').select('id, name').in('id', classIds),
+    supabase.from('subjects').select('id, name').in('id', subjectIds),
+  ])
+
+  if (classesResult.error) throw classesResult.error
+  if (subjectsResult.error) throw subjectsResult.error
+
+  const classNames = new Map((classesResult.data ?? []).map((item) => [item.id, item.name]))
+  const subjectNames = new Map((subjectsResult.data ?? []).map((item) => [item.id, item.name]))
+
+  return rows.map((row) => ({
+    id: row.id,
+    teacher_id: row.teacher_id,
+    class_id: row.class_id,
+    subject_id: row.subject_id,
+    class_name: classNames.get(row.class_id) ?? 'Unknown class',
+    subject_name: subjectNames.get(row.subject_id) ?? 'Unknown subject',
   }))
 }
 

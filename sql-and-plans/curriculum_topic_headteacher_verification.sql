@@ -71,8 +71,9 @@ BEGIN
            ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.created_at) THEN
             RAISE EXCEPTION 'Topic ownership and assignment cannot be changed';
         END IF;
-        IF OLD.approval_status IN ('pending_approval', 'verified', 'approved') THEN
-            RAISE EXCEPTION 'Submitted topics cannot be changed while awaiting review or after approval';
+        IF OLD.approval_status IN ('verified', 'approved')
+            OR (OLD.approval_status = 'pending_approval' AND actor_role <> 'headteacher') THEN
+            RAISE EXCEPTION 'Verified or approved topics cannot be changed';
         END IF;
 
         IF NEW.approval_status IS DISTINCT FROM OLD.approval_status THEN
@@ -265,6 +266,13 @@ GROUP BY
 ALTER VIEW public.curriculum_topic_progress SET (security_invoker = false);
 
 GRANT SELECT ON public.curriculum_topic_progress TO authenticated;
+
+DROP POLICY IF EXISTS subjects_select_headteacher_own_school ON public.subjects;
+CREATE POLICY subjects_select_headteacher_own_school
+    ON public.subjects
+    FOR SELECT
+    TO authenticated
+    USING (school_id = public.headteacher_school_id(auth.uid()));
 
 DROP POLICY IF EXISTS terms_select_headteacher_own_school ON public.terms;
 CREATE POLICY terms_select_headteacher_own_school

@@ -926,6 +926,8 @@ ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY subjects_select_teacher_own_school ON public.subjects AS PERMISSIVE FOR SELECT TO public USING ((school_id = teacher_school_id(auth.uid())));
 
+CREATE POLICY subjects_select_headteacher_own_school ON public.subjects AS PERMISSIVE FOR SELECT TO public USING ((school_id = headteacher_school_id(auth.uid())));
+
 CREATE POLICY subjects_select_parent_own_school ON public.subjects AS PERMISSIVE FOR SELECT TO public USING ((school_id = parent_school_id(auth.uid())));
 
 CREATE POLICY subjects_all_own_school ON public.subjects AS PERMISSIVE FOR ALL TO public USING ((school_id = user_school_id(auth.uid()))) WITH CHECK ((school_id = user_school_id(auth.uid())));
