@@ -190,7 +190,7 @@ export function TeacherDashboard({
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
   }, [classTeacherClasses, assignments])
 
-  const attendanceClasses = allSchoolClasses ? schoolClasses : distinctClasses
+  const attendanceClasses = allSchoolClasses ? schoolClasses : classTeacherClasses
 
   // Keep attendance on a class this teacher teaches or manages.
   useEffect(() => {

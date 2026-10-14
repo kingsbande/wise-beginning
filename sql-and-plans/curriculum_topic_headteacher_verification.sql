@@ -71,8 +71,7 @@ BEGIN
            ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.created_at) THEN
             RAISE EXCEPTION 'Topic ownership and assignment cannot be changed';
         END IF;
-        IF OLD.approval_status IN ('verified', 'approved')
-            OR (OLD.approval_status = 'pending_approval' AND actor_role <> 'headteacher') THEN
+        IF OLD.approval_status IN ('verified', 'approved') THEN
             RAISE EXCEPTION 'Verified or approved topics cannot be changed';
         END IF;
 

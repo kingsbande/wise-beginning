@@ -175,7 +175,7 @@ function TopicRow({ topic, editingId, setEditingId, isSubmitting, isHeadteacher,
   const [note, setNote] = useState(topic.note ?? '')
   const isEditing = editingId === topic.id
   const isLocked = topic.approval_status === 'pending_approval' || topic.approval_status === 'verified' || topic.approval_status === 'approved'
-  const canEditContent = !isLocked || (isHeadteacher && topic.approval_status === 'pending_approval')
+  const canEditContent = !isLocked || topic.approval_status === 'pending_approval'
 
   useEffect(() => { setTitle(topic.title); setNote(topic.note ?? '') }, [topic.title, topic.note])
 

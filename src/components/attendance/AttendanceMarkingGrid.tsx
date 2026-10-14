@@ -7,7 +7,8 @@ import {
   saveAttendance,
   normalizeClassId,
 } from '../../lib/attendanceApi'
-import { AttendanceStatus } from '../../types'
+import type { AttendanceStatus } from '../../types'
+import { getUserFriendlyError } from '../../lib/errorMessages'
 
 interface AttendanceMarkingGridProps {
   schoolId: string
@@ -39,7 +40,7 @@ export function AttendanceMarkingGrid({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const safeClassId = classId ? normalizeClassId(classId) : '';
-  const { data: rows = [], isLoading, isFetching, refetch } = useQuery({
+  const { data: rows = [], isLoading, isFetching, isError: isGridError, error: gridError, refetch } = useQuery({
     queryKey: ['attendance-grid', safeClassId, date],
     queryFn: () => fetchAttendanceGrid({ classId: safeClassId, date }),
     enabled: !!classId,
@@ -52,8 +53,6 @@ export function AttendanceMarkingGrid({
       next[row.student_id] = row.status
     }
     setDrafts(next)
-    setSaveSuccessMessage(null)
-    setErrorMessage(null)
   }, [rows])
 
   // Check if there are unsaved local modifications
@@ -72,26 +71,61 @@ export function AttendanceMarkingGrid({
       setErrorMessage(null)
       setSaveSuccessMessage(null)
 
-      const toSave = Object.entries(drafts)
-        .filter((entry): entry is [string, AttendanceStatus] => entry[1] !== null)
-        .map(([student_id, status]) => ({ student_id, status }))
+      const changedRows = rows.filter((row) => (drafts[row.student_id] ?? null) !== (row.status ?? null))
+      const toSave = changedRows.flatMap((row) => {
+        const status = drafts[row.student_id]
+        return status ? [{ student_id: row.student_id, status }] : []
+      })
+      const clearedStudentIds = changedRows
+        .filter((row) => row.status !== null && drafts[row.student_id] === null)
+        .map((row) => row.student_id)
 
-      if (toSave.length === 0) {
-        throw new Error('Please mark at least one student before saving.')
+      if (toSave.length === 0 && clearedStudentIds.length === 0) {
+        throw new Error('There are no attendance changes to save.')
       }
 
-      await saveAttendance({ schoolId, classId, date, markedBy, rows: toSave })
-      return toSave.length
+      return saveAttendance({ schoolId, classId, date, markedBy, rows: toSave, clearedStudentIds })
     },
-    onSuccess: (savedCount) => {
-      setSaveSuccessMessage(`Successfully saved attendance for ${savedCount} student(s).`)
+    onSuccess: ({ savedCount, clearedCount }) => {
+      const messages = []
+      if (savedCount > 0) messages.push(`saved attendance for ${savedCount} student(s)`)
+      if (clearedCount > 0) messages.push(`cleared ${clearedCount} saved mark(s)`)
+      setSaveSuccessMessage(`Successfully ${messages.join(' and ')}.`)
       // Invalidate queries so that grid and reports update immediately
       queryClient.invalidateQueries({ queryKey: ['attendance-grid', classId, date] })
       queryClient.invalidateQueries({ queryKey: ['attendance-summary'] })
       queryClient.invalidateQueries({ queryKey: ['attendance-records'] })
     },
-    onError: (err: Error) => {
-      setErrorMessage(err.message || 'Failed to save attendance. Please try again.')
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : getErrorMessage(error)
+      const partialSavePrefixes = [
+        'Attendance marks were saved, but cleared records could not be removed: ',
+        'Cleared records could not be removed: ',
+      ]
+      const partialSavePrefix = partialSavePrefixes.find((prefix) => message.startsWith(prefix))
+      if (partialSavePrefix) {
+        queryClient.invalidateQueries({ queryKey: ['attendance-grid', classId, date] })
+        queryClient.invalidateQueries({ queryKey: ['attendance-summary'] })
+        const detail = getUserFriendlyError(
+          new Error(message.slice(partialSavePrefix.length)),
+          'Check that you have permission for this class and that the attendance permissions SQL has been applied, then refresh the register.',
+        )
+        const outcome = partialSavePrefix.startsWith('Attendance marks')
+          ? 'Some attendance marks were saved, but the selected marks could not be cleared.'
+          : 'The selected attendance marks could not be cleared.'
+        setErrorMessage(`${outcome} ${detail}`)
+        return
+      }
+
+      if (message.toLowerCase().includes('timed out')) {
+        setErrorMessage('The request took too long. Refresh the register to confirm whether the attendance was saved before retrying.')
+        return
+      }
+
+      setErrorMessage(getUserFriendlyError(
+        new Error(message),
+        'Attendance could not be saved. Please refresh the register and try again.',
+      ))
     },
   })
 
@@ -116,20 +150,25 @@ export function AttendanceMarkingGrid({
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setDate(e.target.value)
+              setSaveSuccessMessage(null)
+              setErrorMessage(null)
+            }}
+            disabled={saveMutation.isPending}
             max={new Date().toISOString().slice(0, 10)}
             className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-800 shadow-xs focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-400/20"
           />
           <button
             onClick={markAllPresent}
-            disabled={isLoading || rows.length === 0}
+            disabled={isLoading || rows.length === 0 || saveMutation.isPending}
             className="rounded-lg border border-green-600 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
           >
             Mark All Present
           </button>
           <button
             onClick={() => refetch()}
-            disabled={isFetching}
+            disabled={isFetching || saveMutation.isPending}
             title="Reload from server"
             className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50"
           >
@@ -150,24 +189,24 @@ export function AttendanceMarkingGrid({
           )}
           <button
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || isLoading || rows.length === 0}
+            disabled={saveMutation.isPending || isLoading || rows.length === 0 || !hasUnsavedChanges}
             className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-rose-400/30"
           >
-            {saveMutation.isPending ? 'Saving to Database...' : 'Save Attendance'}
+            {saveMutation.isPending ? 'Saving attendance...' : 'Save Attendance'}
           </button>
         </div>
       </div>
 
       {/* Alerts */}
       {saveSuccessMessage && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800 border border-green-200">
+        <div role="status" aria-live="polite" className="mt-3 flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800 border border-green-200">
           <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
           <span>{saveSuccessMessage}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-800 border border-rose-200">
+        <div role="alert" aria-live="assertive" className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-800 border border-rose-200">
           <AlertCircle className="h-4 w-4 flex-shrink-0 text-rose-600" />
           <span>{errorMessage}</span>
         </div>
@@ -176,6 +215,21 @@ export function AttendanceMarkingGrid({
       <div className="mt-4">
         {isLoading ? (
           <div className="py-8 text-center text-sm text-gray-500">Loading student roll...</div>
+        ) : isGridError ? (
+          <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            <p>{getUserFriendlyError(
+              new Error(getErrorMessage(gridError)),
+              'The attendance register could not be loaded. Please try again.',
+            )}</p>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="mt-2 rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
+            >
+              {isFetching ? 'Loading...' : 'Try again'}
+            </button>
+          </div>
         ) : rows.length === 0 ? (
           <div className="py-8 text-center text-sm text-gray-500">No active students in this class.</div>
         ) : (
@@ -192,6 +246,8 @@ export function AttendanceMarkingGrid({
             return (
               <button
                 key={s.value}
+                type="button"
+                disabled={saveMutation.isPending}
                 onClick={() => {
                   setSaveSuccessMessage(null);
                   setErrorMessage(null);
@@ -202,7 +258,7 @@ export function AttendanceMarkingGrid({
                 }}
                 className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${
                   isSelected ? STATUS_PILL_STYLES[s.value] : STATUS_PILL_INACTIVE
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 {s.label}
               </button>
@@ -217,4 +273,12 @@ export function AttendanceMarkingGrid({
       </div>
     </div>
   )
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return ''
 }

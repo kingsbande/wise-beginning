@@ -12,21 +12,175 @@ CREATE TABLE public.attendance_records (
 
 ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY attendance_admin_all ON public.attendance_records AS PERMISSIVE FOR ALL TO public USING ((school_id = user_school_id(auth.uid()))) WITH CHECK ((school_id = user_school_id(auth.uid())));
+CREATE POLICY attendance_admin_all ON public.attendance_records
+    FOR ALL TO authenticated
+    USING (
+        school_id = public.user_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid())
+              AND p.school_id = attendance_records.school_id
+              AND p.role = 'admin')
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    )
+    WITH CHECK (
+        school_id = public.user_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid())
+              AND p.school_id = attendance_records.school_id
+              AND p.role = 'admin')
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
-CREATE POLICY attendance_select_class_teacher ON public.attendance_records AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
-   FROM classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid())))));
+CREATE POLICY attendance_headteacher_select_own_school ON public.attendance_records
+    FOR SELECT TO authenticated
+    USING (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
-CREATE POLICY attendance_insert_class_teacher ON public.attendance_records AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid())))));
+CREATE POLICY attendance_headteacher_insert_own_school ON public.attendance_records
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
-CREATE POLICY attendance_update_class_teacher ON public.attendance_records AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
-   FROM classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid()))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid())))));
+CREATE POLICY attendance_headteacher_update_own_school ON public.attendance_records
+    FOR UPDATE TO authenticated
+    USING (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    )
+    WITH CHECK (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
+
+CREATE POLICY attendance_headteacher_delete_own_school ON public.attendance_records
+    FOR DELETE TO authenticated
+    USING (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
+
+CREATE POLICY attendance_teacher_select_assigned_classes ON public.attendance_records
+    FOR SELECT TO authenticated
+    USING (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND (
+                  c.class_teacher_id = (SELECT auth.uid())
+                  OR EXISTS (SELECT 1 FROM public.teacher_assignments ta
+                      WHERE ta.teacher_id = (SELECT auth.uid())
+                        AND ta.school_id = attendance_records.school_id
+                        AND ta.class_id = attendance_records.class_id)
+              ))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
+
+CREATE POLICY attendance_teacher_insert_class_teacher ON public.attendance_records
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
+
+CREATE POLICY attendance_teacher_update_class_teacher ON public.attendance_records
+    FOR UPDATE TO authenticated
+    USING (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    )
+    WITH CHECK (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
+
+CREATE POLICY attendance_teacher_delete_class_teacher ON public.attendance_records
+    FOR DELETE TO authenticated
+    USING (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_pkey PRIMARY KEY (id);
 

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Wdgcf69A1lODiNk8Eo9RiUbjpmslGwLitkkNW78xeShSHA0YiFqbduzf7CIEk0K
+\restrict vEZs9N2EWjON5MQuUq1MAdrKwXo5qUd3V9dhaF7TIPGmD4Gi494KkWwmwO5OuVK
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.6
@@ -197,6 +197,7 @@ BEGIN
            ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.created_at) THEN
             RAISE EXCEPTION 'Topic ownership and assignment cannot be changed';
         END IF;
+
         IF OLD.approval_status IN ('verified', 'approved')
             OR (OLD.approval_status = 'pending_approval' AND actor_role <> 'headteacher') THEN
             RAISE EXCEPTION 'Verified or approved topics cannot be changed';
@@ -254,9 +255,10 @@ BEGIN
         ) OR NEW.approval_status NOT IN ('approved', 'disapproved') THEN
             RAISE EXCEPTION 'Admins may only finalize verified topics or headteacher-submitted topics';
         END IF;
-          IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.title, NEW.note, NEW.taught_on, NEW.created_at)
+
+        IF ROW(NEW.id, NEW.school_id, NEW.teacher_id, NEW.class_id, NEW.subject_id, NEW.term_id, NEW.title, NEW.note, NEW.taught_on, NEW.created_at)
             IS DISTINCT FROM
-              ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.title, OLD.note, OLD.taught_on, OLD.created_at) THEN
+           ROW(OLD.id, OLD.school_id, OLD.teacher_id, OLD.class_id, OLD.subject_id, OLD.term_id, OLD.title, OLD.note, OLD.taught_on, OLD.created_at) THEN
             RAISE EXCEPTION 'Admins may not edit topic content while reviewing';
         END IF;
         IF NEW.approval_status = 'disapproved' AND NULLIF(btrim(NEW.approval_comment), '') IS NULL THEN
@@ -2841,66 +2843,183 @@ ALTER TABLE ONLY public.weekly_performance_reviews
 -- Name: attendance_records attendance_admin_all; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY attendance_admin_all ON public.attendance_records USING ((school_id = public.user_school_id(auth.uid()))) WITH CHECK ((school_id = public.user_school_id(auth.uid())));
+CREATE POLICY attendance_admin_all ON public.attendance_records
+    FOR ALL TO authenticated
+    USING (
+        school_id = public.user_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid())
+              AND p.school_id = attendance_records.school_id
+              AND p.role = 'admin')
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    )
+    WITH CHECK (
+        school_id = public.user_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid())
+              AND p.school_id = attendance_records.school_id
+              AND p.role = 'admin')
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
+CREATE POLICY attendance_headteacher_select_own_school ON public.attendance_records
+    FOR SELECT TO authenticated
+    USING (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
---
--- Name: attendance_records attendance_headteacher_insert_own_school; Type: POLICY; Schema: public; Owner: postgres
---
+CREATE POLICY attendance_headteacher_insert_own_school ON public.attendance_records
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
-CREATE POLICY attendance_headteacher_insert_own_school ON public.attendance_records FOR INSERT WITH CHECK ((school_id = public.headteacher_school_id(auth.uid())));
+CREATE POLICY attendance_headteacher_update_own_school ON public.attendance_records
+    FOR UPDATE TO authenticated
+    USING (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    )
+    WITH CHECK (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
+CREATE POLICY attendance_headteacher_delete_own_school ON public.attendance_records
+    FOR DELETE TO authenticated
+    USING (
+        school_id = public.headteacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id)
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
---
--- Name: attendance_records attendance_headteacher_select_own_school; Type: POLICY; Schema: public; Owner: postgres
---
+CREATE POLICY attendance_teacher_select_assigned_classes ON public.attendance_records
+    FOR SELECT TO authenticated
+    USING (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND (
+                  c.class_teacher_id = (SELECT auth.uid())
+                  OR EXISTS (SELECT 1 FROM public.teacher_assignments ta
+                      WHERE ta.teacher_id = (SELECT auth.uid())
+                        AND ta.school_id = attendance_records.school_id
+                        AND ta.class_id = attendance_records.class_id)
+              ))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
-CREATE POLICY attendance_headteacher_select_own_school ON public.attendance_records FOR SELECT USING ((school_id = public.headteacher_school_id(auth.uid())));
+CREATE POLICY attendance_teacher_insert_class_teacher ON public.attendance_records
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
+CREATE POLICY attendance_teacher_update_class_teacher ON public.attendance_records
+    FOR UPDATE TO authenticated
+    USING (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    )
+    WITH CHECK (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND marked_by = (SELECT auth.uid())
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
---
--- Name: attendance_records attendance_headteacher_update_own_school; Type: POLICY; Schema: public; Owner: postgres
---
+CREATE POLICY attendance_teacher_delete_class_teacher ON public.attendance_records
+    FOR DELETE TO authenticated
+    USING (
+        school_id = public.teacher_school_id((SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.classes c
+            WHERE c.id = attendance_records.class_id
+              AND c.school_id = attendance_records.school_id
+              AND c.class_teacher_id = (SELECT auth.uid()))
+        AND EXISTS (SELECT 1 FROM public.students s
+            WHERE s.id = attendance_records.student_id
+              AND s.school_id = attendance_records.school_id
+              AND s.class_id = attendance_records.class_id)
+    );
 
-CREATE POLICY attendance_headteacher_update_own_school ON public.attendance_records FOR UPDATE USING ((school_id = public.headteacher_school_id(auth.uid()))) WITH CHECK ((school_id = public.headteacher_school_id(auth.uid())));
-
-
---
--- Name: attendance_records attendance_insert_class_teacher; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY attendance_insert_class_teacher ON public.attendance_records FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
-   FROM public.classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid())))));
-
-
---
 -- Name: attendance_records; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
 ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: attendance_records attendance_select_class_teacher; Type: POLICY; Schema: public; Owner: postgres
---
 
-CREATE POLICY attendance_select_class_teacher ON public.attendance_records FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM public.classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid())))));
-
-
---
--- Name: attendance_records attendance_update_class_teacher; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY attendance_update_class_teacher ON public.attendance_records FOR UPDATE USING ((EXISTS ( SELECT 1
-   FROM public.classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid()))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM public.classes c
-  WHERE ((c.id = attendance_records.class_id) AND (c.class_teacher_id = auth.uid())))));
-
-
---
 -- Name: class_subjects; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -3603,6 +3722,13 @@ CREATE POLICY subjects_all_own_school ON public.subjects USING ((school_id = pub
 
 
 --
+-- Name: subjects subjects_select_headteacher_own_school; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY subjects_select_headteacher_own_school ON public.subjects FOR SELECT TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid())));
+
+
+--
 -- Name: subjects subjects_select_parent_own_school; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -3614,13 +3740,6 @@ CREATE POLICY subjects_select_parent_own_school ON public.subjects FOR SELECT US
 --
 
 CREATE POLICY subjects_select_teacher_own_school ON public.subjects FOR SELECT USING ((school_id = public.teacher_school_id(auth.uid())));
-
-
---
--- Name: subjects subjects_select_headteacher_own_school; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY subjects_select_headteacher_own_school ON public.subjects FOR SELECT TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid())));
 
 
 --
@@ -4406,4 +4525,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Wdgcf69A1lODiNk8Eo9RiUbjpmslGwLitkkNW78xeShSHA0YiFqbduzf7CIEk0K
+\unrestrict vEZs9N2EWjON5MQuUq1MAdrKwXo5qUd3V9dhaF7TIPGmD4Gi494KkWwmwO5OuVK

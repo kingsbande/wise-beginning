@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient'
-import {
+import type {
   AttendanceGridRow,
   AttendanceStatus,
   AttendanceSummaryRow,
@@ -104,24 +104,95 @@ export async function saveAttendance(params: {
   date: string
   markedBy: string
   rows: { student_id: string; status: AttendanceStatus }[]
-}): Promise<void> {
-  if (params.rows.length === 0) return
+  clearedStudentIds: string[]
+}): Promise<{ savedCount: number; clearedCount: number }> {
+  let savedCount = 0
+  let clearedCount = 0
 
-  const payload = params.rows.map((r) => ({
-    school_id: params.schoolId,
-    student_id: r.student_id,
-    class_id: params.classId,
-    date: params.date,
-    status: r.status,
-    marked_by: params.markedBy,
-    updated_at: new Date().toISOString(),
-  }))
+  if (params.rows.length > 0) {
+    const payload = params.rows.map((row) => ({
+      school_id: params.schoolId,
+      student_id: row.student_id,
+      class_id: params.classId,
+      date: params.date,
+      status: row.status,
+      marked_by: params.markedBy,
+      updated_at: new Date().toISOString(),
+    }))
 
-  const { error } = await supabase
-    .from('attendance_records')
-    .upsert(payload, { onConflict: 'student_id,date' })
+    const { error } = await runAttendanceRequest((signal) =>
+      supabase
+        .from('attendance_records')
+        .upsert(payload, { onConflict: 'student_id,date' })
+        .abortSignal(signal),
+    )
 
-  if (error) throw error
+    if (error) throw error
+    savedCount = payload.length
+  }
+
+  if (params.clearedStudentIds.length > 0) {
+    let result
+    try {
+      result = await runAttendanceRequest((signal) =>
+        supabase
+          .from('attendance_records')
+          .delete()
+          .eq('school_id', params.schoolId)
+          .eq('class_id', params.classId)
+          .eq('date', params.date)
+          .in('student_id', params.clearedStudentIds)
+          .select('student_id')
+          .abortSignal(signal),
+      )
+    } catch (error) {
+      const prefix = savedCount > 0
+        ? 'Attendance marks were saved, but cleared records could not be removed: '
+        : 'Cleared records could not be removed: '
+      throw new Error(`${prefix}${getErrorMessage(error)}`)
+    }
+
+    if (result.error) {
+      const prefix = savedCount > 0
+        ? 'Attendance marks were saved, but cleared records could not be removed: '
+        : 'Cleared records could not be removed: '
+      throw new Error(`${prefix}${result.error.message}`)
+    }
+    clearedCount = result.data?.length ?? 0
+    if (clearedCount !== params.clearedStudentIds.length) {
+      const prefix = savedCount > 0
+        ? 'Attendance marks were saved, but cleared records could not be removed: '
+        : 'Cleared records could not be removed: '
+      throw new Error(`${prefix}only ${clearedCount} of ${params.clearedStudentIds.length} selected marks were cleared.`)
+    }
+  }
+
+  return { savedCount, clearedCount }
+}
+
+async function runAttendanceRequest<T>(
+  request: (signal: AbortSignal) => PromiseLike<T>,
+): Promise<T> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 30_000)
+  try {
+    const result = await request(controller.signal)
+    if (controller.signal.aborted) throw new Error('The attendance request timed out.')
+    return result
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('The attendance request timed out.')
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return 'Please refresh the register and try again.'
 }
 
 // ------------------------------------------------------------

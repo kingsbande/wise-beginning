@@ -5,17 +5,16 @@ import { uploadImage } from '../../lib/cloudinary'
 import { useAuth } from '../../context/AuthContext'
 import { fetchClassTeacherAssignments, setClassTeacher } from '../../lib/attendanceApi'
 import { fetchTeachersForAssignment } from '../../lib/staff/staffApi'
+import { AcademicCalendarSetup } from './AcademicCalendarSetup'
 import {
   addProgressReportField,
   addSubject,
-  addTerm,
   assignSubjectToClass,
   deleteProgressReportField,
   deleteSubject,
   fetchClassSubjectLinks,
   fetchProgressReportFields,
   fetchSubjects,
-  fetchTerms,
   unassignSubjectFromClass,
   updateRegistrationTerms,
   updateSchoolLogo,
@@ -41,7 +40,6 @@ export function SetupTab() {
     queryKey: ['teachers-for-assignment'],
     queryFn: fetchTeachersForAssignment,
   })
-  const { data: terms = [] } = useQuery({ queryKey: ['terms'], queryFn: fetchTerms })
   const { data: progressFields = [] } = useQuery({
     queryKey: ['progress-fields'],
     queryFn: fetchProgressReportFields,
@@ -49,8 +47,6 @@ export function SetupTab() {
 
   const [newSubjectName, setNewSubjectName] = useState('')
   const [selectedClassId, setSelectedClassId] = useState('')
-  const [newTermYear, setNewTermYear] = useState(String(new Date().getFullYear()))
-  const [newTermName, setNewTermName] = useState('')
   const [newFieldLabel, setNewFieldLabel] = useState('')
   const [logoUploading, setLogoUploading] = useState(false)
   const [logoError, setLogoError] = useState<string | null>(null)
@@ -95,14 +91,6 @@ export function SetupTab() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['class-teacher-assignments'] }),
   })
 
-  const addTermMutation = useMutation({
-    mutationFn: () => addTerm(profile!.school_id, newTermYear, newTermName),
-    onSuccess: () => {
-      setNewTermName('')
-      queryClient.invalidateQueries({ queryKey: ['terms'] })
-    },
-  })
-
   const addFieldMutation = useMutation({
     mutationFn: (label: string) => addProgressReportField(profile!.school_id, label),
     onSuccess: () => {
@@ -141,12 +129,6 @@ export function SetupTab() {
     e.preventDefault()
     if (newSubjectName.trim() === '') return
     addSubjectMutation.mutate(newSubjectName.trim())
-  }
-
-  function handleAddTerm(e: FormEvent) {
-    e.preventDefault()
-    if (newTermName.trim() === '' || newTermYear.trim() === '') return
-    addTermMutation.mutate()
   }
 
   function handleAddField(e: FormEvent) {
@@ -340,40 +322,7 @@ export function SetupTab() {
         </div>
       </section>
 
-      {/* Terms */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="text-base font-semibold text-gray-900">Terms</h3>
-
-        <form onSubmit={handleAddTerm} className="mt-3 flex flex-wrap gap-2">
-          <input
-            value={newTermYear}
-            onChange={(e) => setNewTermYear(e.target.value)}
-            placeholder="2026"
-            className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
-          />
-          <input
-            value={newTermName}
-            onChange={(e) => setNewTermName(e.target.value)}
-            placeholder="e.g. Term 1"
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={addTermMutation.isPending}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-          >
-            Add
-          </button>
-        </form>
-
-        <ul className="mt-3 divide-y divide-gray-100">
-          {terms.map((t) => (
-            <li key={t.id} className="py-2 text-sm text-gray-700">
-              {t.name} — {t.academic_year}
-            </li>
-          ))}
-        </ul>
-      </section>
+      <AcademicCalendarSetup />
 
       {/* Progress report fields */}
       <section className="rounded-xl border border-gray-200 bg-white p-6">

@@ -86,13 +86,6 @@ export async function fetchTerms(): Promise<Term[]> {
   return (data ?? []) as Term[]
 }
 
-export async function addTerm(schoolId: string, academicYear: string, name: string): Promise<void> {
-  const { error } = await supabase
-    .from('terms')
-    .insert({ school_id: schoolId, academic_year: academicYear, name })
-  if (error) throw error
-}
-
 // ------------------------------------------------------------
 // Grade scale (for computing letter grades client-side, so the
 // same scale drives both the on-screen grid and the PDF without
