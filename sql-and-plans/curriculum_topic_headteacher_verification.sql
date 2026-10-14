@@ -27,7 +27,7 @@ ALTER TABLE public.curriculum_topics
 
 ALTER TABLE public.curriculum_topics
     ADD CONSTRAINT curriculum_topics_approval_status_check
-    CHECK (approval_status IN ('not_started', 'pending_approval', 'verified', 'approved', 'disapproved'));
+    CHECK (approval_status IN ('not_started', 'pending_approval', 'needs_changes', 'verified', 'approved', 'disapproved'));
 
 CREATE OR REPLACE FUNCTION public.enforce_curriculum_topic_approval_workflow()
 RETURNS trigger
@@ -76,12 +76,15 @@ BEGIN
         END IF;
 
         IF NEW.approval_status IS DISTINCT FROM OLD.approval_status THEN
-            IF OLD.approval_status NOT IN ('not_started', 'disapproved')
+            IF OLD.approval_status NOT IN ('not_started', 'needs_changes', 'disapproved')
                 OR NEW.approval_status <> 'pending_approval' THEN
                 RAISE EXCEPTION 'Teachers may only submit or resubmit topics for review';
             END IF;
             IF NEW.taught_on IS NULL THEN
                 RAISE EXCEPTION 'A taught date is required before submitting a topic';
+            END IF;
+            IF NULLIF(btrim(NEW.note), '') IS NULL THEN
+                RAISE EXCEPTION 'A short note is required before submitting a topic';
             END IF;
             NEW.completed := false;
             NEW.approval_comment := NULL;
@@ -97,8 +100,9 @@ BEGIN
     END IF;
 
     IF actor_role = 'headteacher' THEN
-        IF OLD.approval_status <> 'pending_approval' OR NEW.approval_status <> 'verified' THEN
-            RAISE EXCEPTION 'Headteachers may only verify submitted topics';
+        IF OLD.approval_status <> 'pending_approval'
+            OR NEW.approval_status NOT IN ('verified', 'needs_changes') THEN
+            RAISE EXCEPTION 'Headteachers may only verify or return submitted topics';
         END IF;
         IF OLD.teacher_id = actor_id THEN
             RAISE EXCEPTION 'Headteachers cannot verify their own topics';
@@ -109,7 +113,13 @@ BEGIN
             RAISE EXCEPTION 'Headteachers may not edit topic content while verifying';
         END IF;
         NEW.completed := false;
-        NEW.approval_comment := NULL;
+        IF NEW.approval_status = 'needs_changes' THEN
+            IF NULLIF(btrim(NEW.approval_comment), '') IS NULL THEN
+                RAISE EXCEPTION 'A reason is required when returning a topic to the teacher';
+            END IF;
+        ELSE
+            NEW.approval_comment := NULL;
+        END IF;
         NEW.reviewed_by := actor_id;
         NEW.reviewed_at := now();
         RETURN NEW;
@@ -211,7 +221,7 @@ CREATE POLICY curriculum_topics_teacher_delete
     TO authenticated
     USING (
         teacher_id = auth.uid()
-        AND approval_status IN ('not_started', 'disapproved')
+        AND approval_status IN ('not_started', 'needs_changes', 'disapproved')
         AND EXISTS (
             SELECT 1 FROM public.teacher_assignments ta
             WHERE ta.school_id = curriculum_topics.school_id

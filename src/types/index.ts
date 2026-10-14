@@ -167,7 +167,7 @@ export interface CurriculumTopic {
   updated_at: string
 }
 
-export type CurriculumTopicApprovalStatus = 'not_started' | 'pending_approval' | 'verified' | 'approved' | 'disapproved'
+export type CurriculumTopicApprovalStatus = 'not_started' | 'pending_approval' | 'needs_changes' | 'verified' | 'approved' | 'disapproved'
 
 export interface CurriculumTopicProgress {
   school_id: string

@@ -122,12 +122,14 @@ export async function submitCurriculumTopic(id: string, taughtOn: string, note: 
 
 export async function reviewCurriculumTopic(params: {
   id: string
-  status: Extract<CurriculumTopicApprovalStatus, 'verified' | 'approved' | 'disapproved'>
+  status: Extract<CurriculumTopicApprovalStatus, 'verified' | 'needs_changes' | 'approved' | 'disapproved'>
   comment?: string
 }): Promise<void> {
   const comment = params.comment?.trim() ?? ''
-  if (params.status === 'disapproved' && comment === '') {
-    throw new Error('A reason is required when disapproving a topic.')
+  if ((params.status === 'disapproved' || params.status === 'needs_changes') && comment === '') {
+    throw new Error(params.status === 'needs_changes'
+      ? 'A reason is required when returning a topic to the teacher.'
+      : 'A reason is required when disapproving a topic.')
   }
 
   const { data: userData, error: userError } = await supabase.auth.getUser()
