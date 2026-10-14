@@ -99,7 +99,10 @@ export async function fetchCurriculumProgress(termId: string): Promise<Curriculu
   return (data ?? []) as CurriculumTopicProgress[]
 }
 
-export async function submitCurriculumTopic(id: string, taughtOn: string): Promise<void> {
+export async function submitCurriculumTopic(id: string, taughtOn: string, note: string): Promise<void> {
+  if (!taughtOn.trim()) throw new Error('Add date')
+  if (!note.trim()) throw new Error('Add short note')
+
   const { error } = await supabase
     .from('curriculum_topics')
     .update({
@@ -109,6 +112,7 @@ export async function submitCurriculumTopic(id: string, taughtOn: string): Promi
       reviewed_by: null,
       reviewed_at: null,
       taught_on: taughtOn,
+      note: note.trim(),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
