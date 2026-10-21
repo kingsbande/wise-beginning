@@ -64,7 +64,14 @@ export async function saveSchoolAcademicYear(input: {
     p_terms: input.terms,
   })
 
-  if (error) throw new Error(`Failed to save academic calendar: ${error.message}`)
+  if (error) {
+    if (error.code === 'PGRST202') {
+      throw new Error(
+        'The academic-calendar database function is not available yet. Run sql-and-plans/academic_calendar_rpc_fix.sql in Supabase SQL Editor, then retry.',
+      )
+    }
+    throw new Error(`Failed to save academic calendar: ${error.message}`)
+  }
   if (typeof data !== 'string') {
     throw new Error('Academic calendar save returned an unexpected result.')
   }

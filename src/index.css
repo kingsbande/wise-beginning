@@ -33,6 +33,115 @@ select,
 textarea {
   font: inherit;
 }
+
+.sw-update-banner {
+  position: fixed;
+  z-index: 100;
+  bottom: calc(6rem + env(safe-area-inset-bottom));
+  left: 50%;
+  display: flex;
+  width: min(38rem, calc(100% - 2rem));
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  transform: translateX(-50%);
+  border: 1px solid rgb(148 163 184 / 30%);
+  border-radius: 0.875rem;
+  background: #1e293b;
+  padding: 0.875rem 1rem;
+  color: #f8fafc;
+  box-shadow: 0 4px 24px rgb(0 0 0 / 25%);
+  font-family: system-ui, sans-serif;
+  font-size: 0.875rem;
+}
+
+.sw-update-message {
+  min-width: 0;
+}
+
+.sw-update-title {
+  font-weight: 600;
+}
+
+.sw-update-warning {
+  margin-top: 0.25rem;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.sw-update-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sw-update-button,
+.sw-dismiss-button {
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.sw-update-button {
+  background: #6366f1;
+  color: #fff;
+}
+
+.sw-update-button:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.sw-update-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.sw-dismiss-button {
+  background: transparent;
+  color: #cbd5e1;
+}
+
+.sw-dismiss-button:hover {
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
+}
+
+.sw-update-button:focus-visible,
+.sw-dismiss-button:focus-visible {
+  outline: 2px solid #f8fafc;
+  outline-offset: 2px;
+}
+
+@media (min-width: 1024px) {
+  .sw-update-banner {
+    bottom: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .sw-update-banner {
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.75rem;
+  }
+
+  .sw-update-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sw-update-button,
+  .sw-dismiss-button {
+    white-space: nowrap;
+  }
+}
+
 @layer components {
   /* --- Shared page chrome -------------------------------------------------
      Backs the PageHeader component and page-level wrappers so headings,

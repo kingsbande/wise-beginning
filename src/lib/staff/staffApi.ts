@@ -182,6 +182,73 @@ export async function fetchTeacherAssignments(teacherId: string): Promise<Teache
   }))
 }
 
+export interface SchoolTeacherAssignment extends TeacherAssignment {
+  teacher_name: string
+  teacher_role: 'teacher' | 'headteacher'
+}
+
+export interface AssignableStaffMember {
+  id: string
+  full_name: string
+  role: 'teacher' | 'headteacher'
+  is_active: boolean
+}
+
+export async function fetchSchoolTeachingStaff(schoolId: string): Promise<AssignableStaffMember[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, role, is_active')
+    .eq('school_id', schoolId)
+    .in('role', ['teacher', 'headteacher'])
+    .order('full_name')
+
+  if (error) throw error
+  return (data ?? []) as AssignableStaffMember[]
+}
+
+export async function fetchSchoolTeacherAssignments(schoolId: string): Promise<SchoolTeacherAssignment[]> {
+  const { data, error } = await supabase
+    .from('teacher_assignments')
+    .select('id, teacher_id, class_id, subject_id')
+    .eq('school_id', schoolId)
+
+  if (error) throw error
+  const rows = data ?? []
+  if (rows.length === 0) return []
+
+  const teacherIds = [...new Set(rows.map((row) => row.teacher_id))]
+  const classIds = [...new Set(rows.map((row) => row.class_id))]
+  const subjectIds = [...new Set(rows.map((row) => row.subject_id))]
+  const [teachersResult, classesResult, subjectsResult] = await Promise.all([
+    supabase.from('profiles').select('id, full_name, role').in('id', teacherIds),
+    supabase.from('classes').select('id, name').eq('school_id', schoolId).in('id', classIds),
+    supabase.from('subjects').select('id, name').eq('school_id', schoolId).in('id', subjectIds),
+  ])
+
+  if (teachersResult.error) throw teachersResult.error
+  if (classesResult.error) throw classesResult.error
+  if (subjectsResult.error) throw subjectsResult.error
+
+  const teachers = new Map((teachersResult.data ?? []).map((teacher) => [teacher.id, teacher]))
+  const classes = new Map((classesResult.data ?? []).map((item) => [item.id, item.name]))
+  const subjects = new Map((subjectsResult.data ?? []).map((item) => [item.id, item.name]))
+
+  return rows.flatMap((row) => {
+    const teacher = teachers.get(row.teacher_id)
+    if (!teacher || (teacher.role !== 'teacher' && teacher.role !== 'headteacher')) return []
+    return [{
+      id: row.id,
+      teacher_id: row.teacher_id,
+      teacher_name: teacher.full_name,
+      teacher_role: teacher.role,
+      class_id: row.class_id,
+      class_name: classes.get(row.class_id) ?? 'Unknown class',
+      subject_id: row.subject_id,
+      subject_name: subjects.get(row.subject_id) ?? 'Unknown subject',
+    }]
+  })
+}
+
 export async function addTeacherAssignment(params: {
   schoolId: string
   teacherId: string
@@ -196,6 +263,57 @@ export async function addTeacherAssignment(params: {
   })
 
   if (error) throw error
+}
+
+export async function addTeacherAssignments(params: {
+  schoolId: string
+  teacherId: string
+  classId: string
+  subjectIds: string[]
+}): Promise<number> {
+  const subjectIds = [...new Set(params.subjectIds)]
+  if (subjectIds.length === 0) throw new Error('Select at least one subject.')
+
+  const rows = subjectIds.map((subjectId) => ({
+    school_id: params.schoolId,
+    teacher_id: params.teacherId,
+    class_id: params.classId,
+    subject_id: subjectId,
+  }))
+
+  const { data, error } = await supabase
+    .from('teacher_assignments')
+    .upsert(rows, {
+      onConflict: 'teacher_id,class_id,subject_id',
+      ignoreDuplicates: true,
+    })
+    .select('id')
+
+  if (error) throw error
+  return data?.length ?? 0
+}
+
+export async function updateTeacherAssignment(params: {
+  id: string
+  schoolId: string
+  teacherId: string
+  classId: string
+  subjectId: string
+}): Promise<void> {
+  const { data, error } = await supabase
+    .from('teacher_assignments')
+    .update({
+      teacher_id: params.teacherId,
+      class_id: params.classId,
+      subject_id: params.subjectId,
+    })
+    .eq('id', params.id)
+    .eq('school_id', params.schoolId)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('This assignment no longer exists or is outside your school.')
 }
 
 export async function removeTeacherAssignment(id: string): Promise<void> {

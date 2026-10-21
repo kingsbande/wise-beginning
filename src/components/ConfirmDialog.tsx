@@ -60,7 +60,7 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         // Only trigger dismiss if the user actually clicked the outer backdrop, not inside the modal card
         if (e.target === e.currentTarget) {

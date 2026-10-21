@@ -16,7 +16,9 @@ if ('serviceWorker' in navigator) {
         // Check for updates every hour
         if (r) {
           setInterval(() => {
-            r.update()
+            void r.update().catch((error: unknown) => {
+              console.warn('Service worker update check failed:', error)
+            })
           }, 60 * 60 * 1000)
         }
       },
@@ -24,33 +26,56 @@ if ('serviceWorker' in navigator) {
         console.error('Service worker registration failed:', error)
       },
       onNeedRefresh() {
-        // Show a non-intrusive banner instead of force-reloading.
-        // The silent reload was causing the entire app to restart every time
-        // a new build was detected (the SW checks this on window focus).
+        if (document.getElementById('sw-update-banner')) return
+
         const banner = document.createElement('div')
         banner.id = 'sw-update-banner'
-        banner.innerHTML = `
-          <div style="
-            position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
-            background:#1e293b;color:#f8fafc;padding:12px 20px;border-radius:12px;
-            display:flex;align-items:center;gap:12px;box-shadow:0 4px 24px rgba(0,0,0,.35);
-            font-family:system-ui,sans-serif;font-size:14px;z-index:99999;
-          ">
-            <span>🔄 A new version is available</span>
-            <button id="sw-update-btn" style="
-              background:#6366f1;color:#fff;border:none;border-radius:8px;
-              padding:6px 14px;cursor:pointer;font-size:13px;font-weight:600;
-            ">Update now</button>
-            <button id="sw-dismiss-btn" style="
-              background:transparent;color:#94a3b8;border:none;cursor:pointer;font-size:18px;line-height:1;
-            ">✕</button>
-          </div>
-        `
+        banner.className = 'sw-update-banner'
+        banner.setAttribute('role', 'status')
+        banner.setAttribute('aria-live', 'polite')
+
+        const message = document.createElement('div')
+        message.className = 'sw-update-message'
+        const title = document.createElement('p')
+        title.className = 'sw-update-title'
+        title.textContent = 'A new version is available'
+        const warning = document.createElement('p')
+        warning.className = 'sw-update-warning'
+        warning.textContent = 'Updating reloads the app. Save any work in progress first.'
+        message.append(title, warning)
+
+        const actions = document.createElement('div')
+        actions.className = 'sw-update-actions'
+        const updateButton = document.createElement('button')
+        updateButton.type = 'button'
+        updateButton.className = 'sw-update-button'
+        updateButton.textContent = 'Update now'
+        const dismissButton = document.createElement('button')
+        dismissButton.type = 'button'
+        dismissButton.className = 'sw-dismiss-button'
+        dismissButton.textContent = 'Dismiss'
+
+        actions.append(updateButton, dismissButton)
+        banner.append(message, actions)
         document.body.appendChild(banner)
-        document.getElementById('sw-update-btn')?.addEventListener('click', () => {
-          updateSW?.()
+
+        updateButton.addEventListener('click', () => {
+          if (!updateSW) {
+            console.error('Service worker update is unavailable.')
+            warning.textContent = 'The update is not ready. Please try again shortly.'
+            return
+          }
+
+          updateButton.disabled = true
+          updateButton.textContent = 'Updating…'
+          void updateSW().catch((error: unknown) => {
+            console.error('Service worker update failed:', error)
+            warning.textContent = 'The update could not finish. Check your connection and try again.'
+            updateButton.disabled = false
+            updateButton.textContent = 'Retry update'
+          })
         })
-        document.getElementById('sw-dismiss-btn')?.addEventListener('click', () => {
+        dismissButton.addEventListener('click', () => {
           banner.remove()
         })
       },

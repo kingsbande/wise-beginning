@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict WEz0EMOYibvnrILiQS5V2RR4p1N8jV2Il94cNEXkcMnuSqjukl1nh1ulBMlWVXj
+\restrict vsyh5alImhiGlrtZypCMZqQdv3RkPTwVaYXZC9u7ZlWCYiAzUOSNf4AkrywgLzK
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.6
@@ -592,6 +592,38 @@ ALTER FUNCTION public.user_school_id(uid uuid) OWNER TO postgres;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: academic_years; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.academic_years (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    school_id uuid NOT NULL,
+    label text NOT NULL,
+    start_date date,
+    end_date date,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT academic_years_date_range_check CHECK ((((start_date IS NULL) AND (end_date IS NULL)) OR ((start_date IS NOT NULL) AND (end_date IS NOT NULL) AND (start_date <= end_date)))),
+    CONSTRAINT academic_years_label_check CHECK (((label = btrim(label)) AND (btrim(label) <> ''::text)))
+);
+
+
+ALTER TABLE public.academic_years OWNER TO postgres;
+
+--
+-- Name: TABLE academic_years; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.academic_years IS 'School-managed academic years. Schools create and date calendar rows through the application.';
+
+
+--
+-- Name: COLUMN academic_years.label; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.academic_years.label IS 'School-facing label, for example 2026/2027. Leading and trailing spaces are not allowed.';
+
 
 --
 -- Name: attendance_records; Type: TABLE; Schema: public; Owner: postgres
@@ -1232,11 +1264,31 @@ CREATE TABLE public.terms (
     school_id uuid NOT NULL,
     academic_year text NOT NULL,
     name text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    academic_year_id uuid,
+    term_order smallint,
+    start_date date,
+    end_date date,
+    CONSTRAINT terms_academic_year_order_check CHECK ((((academic_year_id IS NULL) AND (term_order IS NULL)) OR ((academic_year_id IS NOT NULL) AND (term_order IS NOT NULL) AND ((term_order >= 1) AND (term_order <= 3))))),
+    CONSTRAINT terms_date_range_check CHECK ((((start_date IS NULL) AND (end_date IS NULL)) OR ((start_date IS NOT NULL) AND (end_date IS NOT NULL) AND (start_date <= end_date))))
 );
 
 
 ALTER TABLE public.terms OWNER TO postgres;
+
+--
+-- Name: COLUMN terms.academic_year_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.terms.academic_year_id IS 'Academic year parent; null means the legacy term has not been mapped.';
+
+
+--
+-- Name: COLUMN terms.term_order; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.terms.term_order IS 'Explicit term order (1, 2, or 3); it is not inferred from the legacy term name.';
+
 
 --
 -- Name: weekly_assessment_scores; Type: TABLE; Schema: public; Owner: postgres
@@ -1300,6 +1352,30 @@ CREATE TABLE public.weekly_performance_reviews (
 
 
 ALTER TABLE public.weekly_performance_reviews OWNER TO postgres;
+
+--
+-- Name: academic_years academic_years_id_school_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.academic_years
+    ADD CONSTRAINT academic_years_id_school_key UNIQUE (id, school_id);
+
+
+--
+-- Name: academic_years academic_years_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.academic_years
+    ADD CONSTRAINT academic_years_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: academic_years academic_years_school_label_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.academic_years
+    ADD CONSTRAINT academic_years_school_label_key UNIQUE (school_id, label);
+
 
 --
 -- Name: attendance_records attendance_records_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -2045,6 +2121,20 @@ CREATE INDEX idx_weekly_performance_reviews_student ON public.weekly_performance
 
 
 --
+-- Name: terms_academic_year_order_key; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX terms_academic_year_order_key ON public.terms USING btree (academic_year_id, term_order) WHERE (academic_year_id IS NOT NULL);
+
+
+--
+-- Name: terms_academic_year_school_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX terms_academic_year_school_idx ON public.terms USING btree (academic_year_id, school_id) WHERE (academic_year_id IS NOT NULL);
+
+
+--
 -- Name: curriculum_topics trg_enforce_curriculum_topic_approval_workflow; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2070,6 +2160,14 @@ CREATE TRIGGER trg_prevent_profile_privilege_escalation BEFORE UPDATE ON public.
 --
 
 CREATE TRIGGER trg_seed_new_school_defaults AFTER INSERT ON public.schools FOR EACH ROW EXECUTE FUNCTION public.seed_new_school_defaults();
+
+
+--
+-- Name: academic_years academic_years_school_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.academic_years
+    ADD CONSTRAINT academic_years_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE RESTRICT;
 
 
 --
@@ -2737,6 +2835,14 @@ ALTER TABLE ONLY public.teacher_details
 
 
 --
+-- Name: terms terms_academic_year_school_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.terms
+    ADD CONSTRAINT terms_academic_year_school_fkey FOREIGN KEY (academic_year_id, school_id) REFERENCES public.academic_years(id, school_id) ON DELETE RESTRICT;
+
+
+--
 -- Name: terms terms_school_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2846,6 +2952,33 @@ ALTER TABLE ONLY public.weekly_performance_reviews
 
 ALTER TABLE ONLY public.weekly_performance_reviews
     ADD CONSTRAINT weekly_performance_reviews_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: academic_years; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.academic_years ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: academic_years academic_years_admin_insert_own_school; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY academic_years_admin_insert_own_school ON public.academic_years FOR INSERT TO authenticated WITH CHECK ((school_id = public.user_school_id(( SELECT auth.uid() AS uid))));
+
+
+--
+-- Name: academic_years academic_years_admin_update_own_school; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY academic_years_admin_update_own_school ON public.academic_years FOR UPDATE TO authenticated USING ((school_id = public.user_school_id(( SELECT auth.uid() AS uid)))) WITH CHECK ((school_id = public.user_school_id(( SELECT auth.uid() AS uid))));
+
+
+--
+-- Name: academic_years academic_years_select_own_school; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY academic_years_select_own_school ON public.academic_years FOR SELECT TO authenticated USING (((school_id = public.user_school_id(( SELECT auth.uid() AS uid))) OR (school_id = public.headteacher_school_id(( SELECT auth.uid() AS uid))) OR (school_id = public.teacher_school_id(( SELECT auth.uid() AS uid))) OR (school_id = public.parent_school_id(( SELECT auth.uid() AS uid)))));
 
 
 --
@@ -4108,6 +4241,13 @@ GRANT ALL ON FUNCTION public.user_school_id(uid uuid) TO service_role;
 
 
 --
+-- Name: TABLE academic_years; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.academic_years TO authenticated;
+
+
+--
 -- Name: TABLE attendance_records; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -4477,4 +4617,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict WEz0EMOYibvnrILiQS5V2RR4p1N8jV2Il94cNEXkcMnuSqjukl1nh1ulBMlWVXj
+\unrestrict vsyh5alImhiGlrtZypCMZqQdv3RkPTwVaYXZC9u7ZlWCYiAzUOSNf4AkrywgLzK
+

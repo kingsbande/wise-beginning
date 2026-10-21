@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Phone,
@@ -35,6 +36,8 @@ import { AttendanceReports } from '../components/attendance/AttendanceReports'
 import { TeacherGrades } from '../components/teacher/TeacherGrades'
 import { TeacherReviewsView } from '../components/teacher/TeacherReviewsView'
 import { TeacherCurriculumView } from '../components/teacher/TeacherCurriculumView'
+import { HeadteacherAssignmentsView } from '../components/teacher/HeadteacherAssignmentsView'
+import { AcademicProgressView } from '../components/AcademicProgressView'
 import { CurriculumProgressView } from '../components/admin/CurriculumProgressView'
 import { ProfilePictureForm } from '../components/settings/ProfilePictureForm'
 import { ChangePasswordForm } from '../components/settings/ChangePasswordForm'
@@ -43,7 +46,7 @@ import { Pagination } from '../components/Pagination'
 import { useCloseOnDesktop } from '../lib/useCloseOnDesktop'
 import logo from '../assets/logo.png'
 
-type View = 'overview' | 'attendance' | 'grades' | 'students' | 'curriculum' | 'verify-topics' | 'reviews' | 'settings'
+type View = 'overview' | 'attendance' | 'grades' | 'students' | 'curriculum' | 'academic-progress' | 'assignments' | 'verify-topics' | 'reviews' | 'settings'
 
 interface TeacherDashboardProps {
   portalLabel?: string
@@ -57,14 +60,16 @@ const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'grades', label: 'Grades & Reports', icon: BarChart3 },
   { id: 'students', label: 'Classes & Students', icon: BookOpen },
   { id: 'curriculum', label: 'Topics Taught', icon: LibraryBig },
+  { id: 'academic-progress', label: 'Academic Progress', icon: BarChart3 },
   { id: 'reviews', label: 'Weekly Reviews', icon: ClipboardList },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ]
 
 const HEADTEACHER_NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
-  ...NAV_ITEMS.slice(0, 5),
+  ...NAV_ITEMS.slice(0, 6),
+  { id: 'assignments', label: 'Teacher Assignments', icon: Users },
   { id: 'verify-topics', label: 'Verify Topics Taught', icon: BadgeCheck },
-  ...NAV_ITEMS.slice(5),
+  ...NAV_ITEMS.slice(6),
 ]
 
 function getInitials(name?: string | null) {
@@ -81,9 +86,14 @@ export function TeacherDashboard({
 }: TeacherDashboardProps = {}) {
   const { profile, signOut } = useAuth()
   const navItems = profile?.role === 'headteacher' ? HEADTEACHER_NAV_ITEMS : NAV_ITEMS
+  const mobilePrimaryViewIds: View[] =
+    profile?.role === 'headteacher'
+      ? ['overview', 'grades', 'academic-progress', 'assignments']
+      : ['overview', 'attendance', 'grades', 'students']
+  const mobileNavItems = navItems.filter((item) => mobilePrimaryViewIds.includes(item.id))
   const [activeView, setActiveView] = useState<View>(() => {
     const saved = sessionStorage.getItem(storageKey) as View | null
-    return saved && [...NAV_ITEMS, HEADTEACHER_NAV_ITEMS[5]].some((item) => item.id === saved) ? saved : 'overview'
+    return saved && [...NAV_ITEMS, ...HEADTEACHER_NAV_ITEMS].some((item) => item.id === saved) ? saved : 'overview'
   })
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -105,7 +115,11 @@ export function TeacherDashboard({
   }, [activeView, storageKey])
 
   useEffect(() => {
-    if (profile && profile.role !== 'headteacher' && activeView === 'verify-topics') {
+    if (
+      profile &&
+      profile.role !== 'headteacher' &&
+      (activeView === 'verify-topics' || activeView === 'assignments')
+    ) {
       setActiveView('overview')
     }
   }, [activeView, profile])
@@ -191,6 +205,7 @@ export function TeacherDashboard({
   }, [classTeacherClasses, assignments])
 
   const attendanceClasses = allSchoolClasses ? schoolClasses : classTeacherClasses
+  const academicProgressClassIds = (allSchoolClasses ? schoolClasses : distinctClasses).map((item) => item.id)
 
   // Keep attendance on a class this teacher teaches or manages.
   useEffect(() => {
@@ -1120,6 +1135,18 @@ export function TeacherDashboard({
             />
           )}
 
+          {activeView === 'academic-progress' && (
+            <div className="space-y-4 sm:space-y-6">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+                <AcademicProgressView allowedClassIds={academicProgressClassIds} />
+              </div>
+            </div>
+          )}
+
+          {activeView === 'assignments' && profile?.role === 'headteacher' && (
+            <HeadteacherAssignmentsView />
+          )}
+
           {activeView === 'verify-topics' && profile?.role === 'headteacher' && (
             <CurriculumProgressView reviewerRole="headteacher" />
           )}
@@ -1150,21 +1177,42 @@ export function TeacherDashboard({
       {/* Mobile Bottom Navigation Bar */}
       <nav className="fixed bottom-3 left-1/2 z-50 w-[min(640px,96%)] -translate-x-1/2 rounded-2xl bg-white/95 backdrop-blur-md px-2 py-1.5 shadow-xl border border-slate-200/80 lg:hidden">
         <div className="flex items-center justify-around">
-          {navItems.map(({ id, label, icon: Icon }) => {
+          {mobileNavItems.map(({ id, label, icon: Icon }) => {
             const isActive = activeView === id
+            const mobileLabel =
+              id === 'academic-progress' ? 'Progress'
+                : id === 'assignments' ? 'Assign'
+                  : id === 'attendance' ? 'Attend'
+                    : id === 'students' ? 'Students'
+                      : id === 'overview' ? 'Home'
+                        : label.split(' ')[0]
             return (
               <button
                 key={id}
                 onClick={() => handleNavSelect(id)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[11px] font-medium transition-colors ${isActive ? 'text-rose-600 font-semibold' : 'text-slate-500 hover:text-slate-800'
+                className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[11px] font-medium transition-colors ${isActive ? 'text-rose-600 font-semibold' : 'text-slate-500 hover:text-slate-800'
                   }`}
               >
                 <Icon className={`h-5 w-5 ${isActive ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span className="truncate max-w-[64px]">{label.split(' ')[0]}</span>
+                <span className="max-w-full truncate">{mobileLabel}</span>
               </button>
             )
           })}
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(true)}
+            aria-label="Open more navigation options"
+            aria-expanded={isMobileMenuOpen}
+            className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[11px] font-medium transition-colors ${
+              mobilePrimaryViewIds.includes(activeView) ? 'text-slate-500 hover:text-slate-800' : 'font-semibold text-rose-600'
+            }`}
+          >
+            <MoreHorizontal className={`h-5 w-5 ${
+              mobilePrimaryViewIds.includes(activeView) ? 'text-slate-400' : 'text-rose-600'
+            }`} />
+            <span>More</span>
+          </button>
         </div>
       </nav>
     </div>

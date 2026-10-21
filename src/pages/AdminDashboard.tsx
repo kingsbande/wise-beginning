@@ -30,6 +30,7 @@ import { Staff } from '../pages/Staff'
 import { Attendance } from '../pages/Attendance'
 import { Fees } from '../pages/Fees'
 import { Analytics } from '../pages/Analytics'
+import { AcademicProgressView } from '../components/AcademicProgressView'
 import { AdminReviewsView } from '../components/admin/AdminReviewsView'
 import { CurriculumProgressView } from '../components/admin/CurriculumProgressView'
 import { GlobalSearch } from '../components/GlobalSearch'
@@ -44,7 +45,7 @@ interface DashboardStats {
   totalStaff: number
 }
 
-type View = 'overview' | 'register' | 'students' | 'parents' | 'grades' | 'staff' | 'attendance' | 'curriculum' | 'fees' | 'analytics' | 'reviews' | 'settings'
+type View = 'overview' | 'register' | 'students' | 'parents' | 'grades' | 'staff' | 'attendance' | 'curriculum' | 'academic-progress' | 'fees' | 'analytics' | 'reviews' | 'settings'
 
 const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -56,6 +57,7 @@ const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
   { id: 'reviews', label: 'Weekly Reviews', icon: ClipboardList },
   { id: 'curriculum', label: 'Curriculum Progress', icon: LibraryBig },
+  { id: 'academic-progress', label: 'Academic Progress', icon: BarChart3 },
   { id: 'fees', label: 'Fees', icon: Wallet },
   { id: 'analytics', label: 'Analytics', icon: Activity },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -64,7 +66,7 @@ const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
 // Views that live only in the drawer/sidebar on mobile. When one of these is
 // active, the "More" tab in the bottom bar highlights so users can tell where
 // they are.
-const MOBILE_MORE_VIEWS: View[] = ['parents', 'staff', 'attendance', 'reviews', 'curriculum', 'fees', 'analytics', 'settings']
+const MOBILE_MORE_VIEWS: View[] = ['parents', 'staff', 'attendance', 'reviews', 'curriculum', 'academic-progress', 'fees', 'analytics', 'settings']
 
 function getInitials(name?: string | null) {
   if (!name) return 'A'
@@ -793,6 +795,8 @@ export function AdminDashboard() {
           {activeView === 'reviews' && <AdminReviewsView />}
 
           {activeView === 'curriculum' && <CurriculumProgressView />}
+
+          {activeView === 'academic-progress' && <AcademicProgressView />}
 
           {activeView === 'fees' && <Fees />}
 
