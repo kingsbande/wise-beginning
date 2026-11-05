@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
 import { queryClient } from '../lib/queryClient'
+import { getSchoolSlug } from '../lib/schoolSlug'
 
 export interface ParentProfile {
   id: string
@@ -33,11 +34,27 @@ export function ParentAuthProvider({ children }: { children: ReactNode }) {
   async function loadParentProfile(userId: string) {
     const { data: account, error } = await supabase
       .from('parent_accounts')
-      .select('id, full_name, username, school_id, must_change_password, schools ( name, logo_url )')
+      .select('id, full_name, username, school_id, must_change_password, schools ( slug, name, logo_url )')
       .eq('id', userId)
       .single()
 
     if (error || !account) {
+      setParentProfile(null)
+      return
+    }
+
+    const row = account as unknown as {
+      id: string
+      full_name: string
+      username: string
+      school_id: string
+      must_change_password: boolean
+      schools: { slug: string; name: string; logo_url: string | null } | null
+    }
+
+    const expectedSlug = getSchoolSlug()
+    if (expectedSlug && row.schools?.slug !== expectedSlug) {
+      await supabase.auth.signOut()
       setParentProfile(null)
       return
     }
@@ -48,15 +65,6 @@ export function ParentAuthProvider({ children }: { children: ReactNode }) {
       .select('id')
       .eq('parent_account_id', userId)
       .maybeSingle()
-
-    const row = account as unknown as {
-      id: string
-      full_name: string
-      username: string
-      school_id: string
-      must_change_password: boolean
-      schools: { name: string; logo_url: string | null } | null
-    }
 
     setParentProfile({
       id: row.id,

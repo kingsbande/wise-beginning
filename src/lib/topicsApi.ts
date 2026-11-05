@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient'
 import { CurriculumTopic, CurriculumTopicApprovalStatus, CurriculumTopicProgress, Term } from '../types'
+import { notifyAdminEvent } from './adminNotificationsApi'
 
 export async function fetchTerms(): Promise<Term[]> {
   const { data, error } = await supabase
@@ -149,4 +150,8 @@ export async function reviewCurriculumTopic(params: {
     .eq('id', params.id)
 
   if (error) throw error
+
+  if (params.status === 'verified') {
+    notifyAdminEvent({ event_type: 'topic_verified', topic_id: params.id })
+  }
 }

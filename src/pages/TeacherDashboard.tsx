@@ -43,8 +43,8 @@ import { ProfilePictureForm } from '../components/settings/ProfilePictureForm'
 import { ChangePasswordForm } from '../components/settings/ChangePasswordForm'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { Pagination } from '../components/Pagination'
+import { SchoolLogo } from '../components/SchoolLogo'
 import { useCloseOnDesktop } from '../lib/useCloseOnDesktop'
-import logo from '../assets/logo.png'
 
 type View = 'overview' | 'attendance' | 'grades' | 'students' | 'curriculum' | 'academic-progress' | 'assignments' | 'verify-topics' | 'reviews' | 'settings'
 
@@ -303,11 +303,7 @@ export function TeacherDashboard({
               )}
             </button>
 
-            <img
-              src={logo}
-              alt="School logo"
-              className="h-9 w-9 flex-none rounded-full border border-white/10 object-cover"
-            />
+            <SchoolLogo className="h-9 w-9 flex-none rounded-full border border-white/10 object-cover" />
             <div className="min-w-0 leading-tight">
               <p className="truncate text-sm font-semibold text-white">
                 {profile?.school_name ?? 'School Portal'}

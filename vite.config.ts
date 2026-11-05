@@ -49,6 +49,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         skipWaiting: false,
         clientsClaim: false,
+        navigateFallbackDenylist: [/^\/api\//],
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
         runtimeCaching: [
           {

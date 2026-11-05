@@ -1,6 +1,10 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { FeaturesProvider } from './context/FeaturesContext'
+import { SchoolProvider } from './context/SchoolContext'
+import { SchoolGate } from './components/SchoolGate'
+import { getRouterBasename } from './lib/schoolSlug'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ParentAuthProvider } from './context/ParentAuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
@@ -49,10 +53,11 @@ function ParentLayout() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Suspense fallback={<LoadingScreen />}>
-          <Routes>
+    <BrowserRouter basename={getRouterBasename()}>
+      <SchoolProvider><SchoolGate><AuthProvider>
+        <FeaturesProvider>
+          <Suspense fallback={<LoadingScreen />}>
+            <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/parent/login" element={<Login />} />
             <Route path="/staff/change-password" element={<ForceChangePasswordStaff />} />
@@ -130,9 +135,10 @@ export default function App() {
             </Route>
 
             <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </Suspense>
-      </AuthProvider>
+            </Routes>
+          </Suspense>
+        </FeaturesProvider>
+      </AuthProvider></SchoolGate></SchoolProvider>
     </BrowserRouter>
   )
 }

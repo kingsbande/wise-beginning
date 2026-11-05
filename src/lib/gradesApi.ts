@@ -7,6 +7,7 @@ import {
   Subject,
   Term,
 } from '../types'
+import { notifyAdminEvent } from './adminNotificationsApi'
 
 // ------------------------------------------------------------
 // Subjects
@@ -154,6 +155,7 @@ export async function fetchGradeGrid(params: {
 
 export async function saveGrades(params: {
   schoolId: string
+  classId: string
   termId: string
   subjectId: string
   assessmentType: AssessmentType
@@ -178,6 +180,14 @@ export async function saveGrades(params: {
     .upsert(payload, { onConflict: 'student_id,subject_id,term_id,assessment_type' })
 
   if (error) throw error
+
+  notifyAdminEvent({
+    event_type: 'grade_saved',
+    class_id: params.classId,
+    subject_id: params.subjectId,
+    term_id: params.termId,
+    assessment_type: params.assessmentType,
+  })
 }
 
 // ------------------------------------------------------------
@@ -382,6 +392,12 @@ export async function releaseGrades(params: {
     { onConflict: 'class_id,term_id' },
   )
   if (error) throw error
+
+  notifyAdminEvent({
+    event_type: 'grades_released',
+    class_id: params.classId,
+    term_id: params.termId,
+  })
 }
 
 export async function fetchProgressEntriesForStudent(

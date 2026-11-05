@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { notifyAdminEvent } from './adminNotificationsApi'
 import type {
   AttendanceGridRow,
   AttendanceStatus,
@@ -129,6 +130,11 @@ export async function saveAttendance(params: {
 
     if (error) throw error
     savedCount = payload.length
+    notifyAdminEvent({
+      event_type: 'attendance_saved',
+      class_id: params.classId,
+      date: params.date,
+    })
   }
 
   if (params.clearedStudentIds.length > 0) {
@@ -164,6 +170,13 @@ export async function saveAttendance(params: {
         ? 'Attendance marks were saved, but cleared records could not be removed: '
         : 'Cleared records could not be removed: '
       throw new Error(`${prefix}only ${clearedCount} of ${params.clearedStudentIds.length} selected marks were cleared.`)
+    }
+    if (savedCount === 0 && clearedCount > 0) {
+      notifyAdminEvent({
+        event_type: 'attendance_saved',
+        class_id: params.classId,
+        date: params.date,
+      })
     }
   }
 

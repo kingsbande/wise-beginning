@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { queryClient } from '../lib/queryClient'
 import { Profile } from '../types'
 import { getUserFriendlyError } from '../lib/errorMessages'
+import { getSchoolSlug } from '../lib/schoolSlug'
 
 interface AuthContextValue {
   session: Session | null
@@ -25,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, full_name, role, school_id, avatar_url, must_change_password, username, is_active, schools ( name, logo_url, registration_terms )',
+        'id, full_name, role, school_id, avatar_url, must_change_password, username, is_active, schools ( slug, name, logo_url, registration_terms )',
       )
       .eq('id', userId)
       .single()
@@ -40,9 +41,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         must_change_password: boolean
         username: string | null
         is_active: boolean
-        schools: { name: string; logo_url: string | null; registration_terms: string | null } | null
+        schools: { slug: string; name: string; logo_url: string | null; registration_terms: string | null } | null
       }
       if (!row.is_active) {
+        await supabase.auth.signOut()
+        setProfile(null)
+        return
+      }
+      const expectedSlug = getSchoolSlug()
+      if (expectedSlug && row.schools?.slug !== expectedSlug) {
         await supabase.auth.signOut()
         setProfile(null)
         return

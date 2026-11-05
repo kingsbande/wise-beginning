@@ -1,5 +1,5 @@
 import { useAuth } from '../context/AuthContext'
-import logoImage from '../assets/logo.png'
+import { SchoolLogo } from './SchoolLogo'
 
 export function LoadingScreen() {
   const { profile } = useAuth()
@@ -16,7 +16,7 @@ export function LoadingScreen() {
       <div className="relative flex flex-col items-center gap-8">
         {/* Loading badge */}
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-lg">
-          <img src={logoImage} alt="Logo" className="h-12 w-12 object-contain" />
+          <SchoolLogo className="h-12 w-12 object-contain" />
         </div>
 
         {/* Text */}

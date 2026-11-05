@@ -33,10 +33,11 @@ import { Analytics } from '../pages/Analytics'
 import { AcademicProgressView } from '../components/AcademicProgressView'
 import { AdminReviewsView } from '../components/admin/AdminReviewsView'
 import { CurriculumProgressView } from '../components/admin/CurriculumProgressView'
+import { AdminNotificationCenter } from '../components/admin/AdminNotificationCenter'
 import { GlobalSearch } from '../components/GlobalSearch'
+import { SchoolLogo } from '../components/SchoolLogo'
 import { supabase } from '../lib/supabaseClient'
 import { useCloseOnDesktop } from '../lib/useCloseOnDesktop'
-import logo from '../assets/logo.png'
 
 interface DashboardStats {
   totalStudents: number
@@ -239,11 +240,7 @@ export function AdminDashboard() {
               )}
             </button>
 
-            <img
-              src={logo}
-              alt="School logo"
-              className="h-9 w-9 flex-none rounded-full border border-white/10 object-cover"
-            />
+            <SchoolLogo className="h-9 w-9 flex-none rounded-full border border-white/10 object-cover" />
             <div className="min-w-0 leading-tight">
               <p className="truncate text-sm font-semibold text-white">
                 {profile?.school_name ?? 'School Portal'}
@@ -266,6 +263,7 @@ export function AdminDashboard() {
 
           {/* Right cluster stays on one line; below `sm` it collapses down to just the avatar */}
           <div className="flex flex-none items-center gap-2 sm:gap-3">
+            <AdminNotificationCenter />
             <span className="hidden text-sm text-slate-200 md:inline">{profile?.full_name}</span>
 
             {profile?.avatar_url ? (

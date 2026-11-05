@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import logo from '../assets/logo.png'
+import { getSchoolSlug } from '../lib/schoolSlug'
+import { useSchool } from '../context/SchoolContext'
 import { LoadingScreen } from '../components/LoadingScreen'
 import { InstallButton } from '../components/InstallButton'
 import { IosInstallHint } from '../components/IosInstallHint'
@@ -18,6 +19,9 @@ import { Eye, EyeOff } from 'lucide-react'
 const PARENT_EMAIL_DOMAIN = 'parents.app'
 const STAFF_EMAIL_DOMAIN = 'staff.app'
 
+const WRONG_SCHOOL_MESSAGE =
+  'This account belongs to a different school. Please use your own school’s link.'
+
 type Destination =
   | '/admin'
   | '/headteacher'
@@ -26,27 +30,46 @@ type Destination =
   | '/parent'
   | '/parent/change-password'
 
-async function resolveDestination(userId: string): Promise<Destination | null> {
-  const { data: staffProfile } = await supabase
+type Resolution = Destination | 'wrong_school' | null
+
+interface StaffRow {
+  role: string
+  must_change_password: boolean
+  schools: { slug: string } | null
+}
+
+interface ParentRow {
+  must_change_password: boolean
+  schools: { slug: string } | null
+}
+
+async function resolveDestination(userId: string): Promise<Resolution> {
+  const expectedSlug = getSchoolSlug()
+
+  const { data: staffData } = await supabase
     .from('profiles')
-    .select('role, must_change_password')
+    .select('role, must_change_password, schools ( slug )')
     .eq('id', userId)
     .maybeSingle()
+  const staffProfile = staffData as unknown as StaffRow | null
 
   if (staffProfile) {
+    if (expectedSlug && staffProfile.schools?.slug !== expectedSlug) return 'wrong_school'
     if (staffProfile.must_change_password) return '/staff/change-password'
     if (staffProfile.role === 'admin') return '/admin'
     if (staffProfile.role === 'headteacher') return '/headteacher'
     if (staffProfile.role === 'teacher') return '/teacher'
   }
 
-  const { data: parentAccount } = await supabase
+  const { data: parentData } = await supabase
     .from('parent_accounts')
-    .select('must_change_password')
+    .select('must_change_password, schools ( slug )')
     .eq('id', userId)
     .maybeSingle()
+  const parentAccount = parentData as unknown as ParentRow | null
 
   if (parentAccount) {
+    if (expectedSlug && parentAccount.schools?.slug !== expectedSlug) return 'wrong_school'
     return parentAccount.must_change_password ? '/parent/change-password' : '/parent'
   }
 
@@ -79,6 +102,7 @@ async function attemptUsernameSignIn(username: string, password: string) {
 
 export function Login() {
   const navigate = useNavigate()
+  const school = useSchool()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -105,7 +129,9 @@ export function Login() {
 
         if (data.session) {
           const destination = await resolveDestination(data.session.user.id)
-          if (destination && !cancelled) {
+          if (destination === 'wrong_school') {
+            await supabase.auth.signOut()
+          } else if (destination && !cancelled) {
             navigate(destination, { replace: true })
             return
           }
@@ -155,6 +181,13 @@ export function Login() {
 
     const destination = await resolveDestination(userId)
 
+    if (destination === 'wrong_school') {
+      await supabase.auth.signOut()
+      setSubmitting(false)
+      setError(WRONG_SCHOOL_MESSAGE)
+      return
+    }
+
     if (!destination) {
       await supabase.auth.signOut()
       setSubmitting(false)
@@ -196,14 +229,23 @@ export function Login() {
       <div className="relative w-full max-w-sm">
         <div className="relative mt-14 rounded-2xl border border-white/10 bg-white/5 p-8 pt-16 text-center shadow-2xl shadow-black/40 backdrop-blur">
           <div className="absolute -top-14 left-1/2 h-28 w-28 -translate-x-1/2 overflow-hidden rounded-full border-2 border-white/10 bg-white p-0 shadow-xl">
-            <img
-              src={logo}
-              alt="Wise Beginning Pvt School logo"
-              className="h-full w-full rounded-full object-cover"
-            />
+            {school.logoUrl ? (
+              <img
+                src={school.logoUrl}
+                alt={`${school.name} logo`}
+                className="h-full w-full rounded-full object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="flex h-full w-full items-center justify-center bg-rose-600 text-4xl font-semibold text-white"
+              >
+                {school.name.charAt(0).toUpperCase()}
+              </span>
+            )}
           </div>
 
-          <h1 className="mt-1 text-2xl font-semibold text-white">Wise Beginning Pvt School</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-white">{school.name}</h1>
           <p className="mt-1 text-sm text-slate-300">Sign in to continue.</p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-left" noValidate>

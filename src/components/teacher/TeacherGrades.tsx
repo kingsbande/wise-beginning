@@ -69,6 +69,7 @@ export function TeacherGrades() {
 
       await saveGrades({
         schoolId: profile!.school_id,
+        classId: selectedAssignment!.class_id,
         termId: enterTermId,
         subjectId: selectedAssignment!.subject_id,
         assessmentType: enterAssessmentType,

@@ -2,7 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict vsyh5alImhiGlrtZypCMZqQdv3RkPTwVaYXZC9u7ZlWCYiAzUOSNf4AkrywgLzK
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.6
@@ -23,16 +22,13 @@ SET row_security = off;
 -- Name: public; Type: SCHEMA; Schema: -; Owner: pg_database_owner
 --
 
-CREATE SCHEMA public;
 
 
-ALTER SCHEMA public OWNER TO pg_database_owner;
 
 --
 -- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: pg_database_owner
 --
 
-COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
@@ -480,6 +476,187 @@ $$;
 
 
 ALTER FUNCTION public.rls_auto_enable() OWNER TO postgres;
+
+--
+-- Name: save_school_academic_year(uuid, text, date, date, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.save_school_academic_year(p_academic_year_id uuid, p_label text, p_start_date date, p_end_date date, p_terms jsonb) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_actor_id uuid := auth.uid();
+  v_school_id uuid;
+  v_role text;
+  v_academic_year_id uuid;
+  v_term jsonb;
+  v_term_order smallint;
+  v_term_id uuid;
+  v_term_start date;
+  v_term_end date;
+  v_term_name text;
+BEGIN
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'Authentication is required to manage the academic calendar';
+  END IF;
+
+  SELECT profile.school_id, profile.role
+  INTO v_school_id, v_role
+  FROM public.profiles profile
+  WHERE profile.id = v_actor_id;
+
+  IF v_school_id IS NULL OR v_role <> 'admin' THEN
+    RAISE EXCEPTION 'Only a school administrator can manage the academic calendar';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_school_id::text, 0));
+
+  IF p_label IS NULL OR btrim(p_label) !~ '^[0-9]{4}/[0-9]{4}$' THEN
+    RAISE EXCEPTION 'Academic year must use the format YYYY/YYYY';
+  END IF;
+
+  IF split_part(btrim(p_label), '/', 2)::integer
+     <> split_part(btrim(p_label), '/', 1)::integer + 1 THEN
+    RAISE EXCEPTION 'Academic year must use consecutive years, for example 2026/2027';
+  END IF;
+
+  IF p_start_date IS NULL OR p_end_date IS NULL OR p_start_date > p_end_date THEN
+    RAISE EXCEPTION 'Enter a valid academic-year start and end date';
+  END IF;
+
+  IF p_terms IS NULL
+     OR jsonb_typeof(p_terms) <> 'array'
+     OR jsonb_array_length(p_terms) <> 3
+     OR EXISTS (
+       SELECT 1
+       FROM jsonb_array_elements(p_terms) AS item(value)
+       WHERE item.value ->> 'term_order' IS NULL
+          OR item.value ->> 'start_date' IS NULL
+          OR item.value ->> 'end_date' IS NULL
+     )
+     OR (
+       SELECT array_agg((item.value ->> 'term_order')::smallint ORDER BY (item.value ->> 'term_order')::smallint)
+       FROM jsonb_array_elements(p_terms) AS item(value)
+     ) IS DISTINCT FROM ARRAY[1, 2, 3]::smallint[] THEN
+    RAISE EXCEPTION 'Provide exactly Term 1, Term 2, and Term 3 with dates';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(p_terms) AS item(value)
+    WHERE (item.value ->> 'start_date')::date > (item.value ->> 'end_date')::date
+       OR (item.value ->> 'start_date')::date < p_start_date
+       OR (item.value ->> 'end_date')::date > p_end_date
+  ) THEN
+    RAISE EXCEPTION 'Each term must have valid dates within the academic year';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(p_terms) AS a(value)
+    JOIN jsonb_array_elements(p_terms) AS b(value)
+      ON (a.value ->> 'term_order')::smallint < (b.value ->> 'term_order')::smallint
+    WHERE daterange(
+      (a.value ->> 'start_date')::date,
+      (a.value ->> 'end_date')::date,
+      '[]'
+    ) && daterange(
+      (b.value ->> 'start_date')::date,
+      (b.value ->> 'end_date')::date,
+      '[]'
+    )
+  ) THEN
+    RAISE EXCEPTION 'Academic term dates must not overlap';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.academic_years year
+    WHERE year.school_id = v_school_id
+      AND year.id IS DISTINCT FROM p_academic_year_id
+      AND year.start_date IS NOT NULL
+      AND daterange(year.start_date, year.end_date, '[]')
+          && daterange(p_start_date, p_end_date, '[]')
+  ) THEN
+    RAISE EXCEPTION 'This academic year overlaps another configured year';
+  END IF;
+
+  IF p_academic_year_id IS NULL THEN
+    INSERT INTO public.academic_years (school_id, label, start_date, end_date)
+    VALUES (v_school_id, btrim(p_label), p_start_date, p_end_date)
+    RETURNING id INTO v_academic_year_id;
+  ELSE
+    UPDATE public.academic_years
+    SET label = btrim(p_label),
+        start_date = p_start_date,
+        end_date = p_end_date
+    WHERE id = p_academic_year_id
+      AND school_id = v_school_id
+    RETURNING id INTO v_academic_year_id;
+
+    IF v_academic_year_id IS NULL THEN
+      RAISE EXCEPTION 'The selected academic year does not belong to your school';
+    END IF;
+  END IF;
+
+  FOR v_term IN
+    SELECT item.value
+    FROM jsonb_array_elements(p_terms) AS item(value)
+    ORDER BY (item.value ->> 'term_order')::smallint
+  LOOP
+    v_term_order := (v_term ->> 'term_order')::smallint;
+    v_term_name := format('Term %s', v_term_order);
+    v_term_start := (v_term ->> 'start_date')::date;
+    v_term_end := (v_term ->> 'end_date')::date;
+    v_term_id := NULLIF(v_term ->> 'term_id', '')::uuid;
+
+    IF v_term_id IS NULL THEN
+      INSERT INTO public.terms (
+        school_id,
+        academic_year,
+        name,
+        academic_year_id,
+        term_order,
+        start_date,
+        end_date
+      )
+      VALUES (
+        v_school_id,
+        split_part(btrim(p_label), '/', 1),
+        v_term_name,
+        v_academic_year_id,
+        v_term_order,
+        v_term_start,
+        v_term_end
+      );
+    ELSE
+      UPDATE public.terms
+      SET academic_year_id = v_academic_year_id,
+          term_order = v_term_order,
+          start_date = v_term_start,
+          end_date = v_term_end
+      WHERE id = v_term_id
+        AND school_id = v_school_id
+        AND btrim(name) = v_term_name
+        AND (
+          academic_year = split_part(btrim(p_label), '/', 1)
+          OR academic_year_id = v_academic_year_id
+        )
+        AND (academic_year_id IS NULL OR academic_year_id = v_academic_year_id);
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Selected % is not an eligible unmapped term for your school', v_term_name;
+      END IF;
+    END IF;
+  END LOOP;
+
+  RETURN v_academic_year_id;
+END;
+$_$;
+
+
+ALTER FUNCTION public.save_school_academic_year(p_academic_year_id uuid, p_label text, p_start_date date, p_end_date date, p_terms jsonb) OWNER TO postgres;
 
 --
 -- Name: score_to_letter(uuid, numeric); Type: FUNCTION; Schema: public; Owner: postgres
@@ -3557,6 +3734,13 @@ CREATE POLICY parent_accounts_update_own_school ON public.parent_accounts FOR UP
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: profiles profiles_select_headteacher_school_staff; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY profiles_select_headteacher_school_staff ON public.profiles FOR SELECT TO authenticated USING (((school_id = public.headteacher_school_id(auth.uid())) AND (role = ANY (ARRAY['teacher'::text, 'headteacher'::text]))));
+
+
+--
 -- Name: profiles profiles_select_own; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -3838,6 +4022,46 @@ ALTER TABLE public.teacher_assignments ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY teacher_assignments_admin_all ON public.teacher_assignments USING ((school_id = public.user_school_id(auth.uid()))) WITH CHECK ((school_id = public.user_school_id(auth.uid())));
+
+
+--
+-- Name: teacher_assignments teacher_assignments_headteacher_delete; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY teacher_assignments_headteacher_delete ON public.teacher_assignments FOR DELETE TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid())));
+
+
+--
+-- Name: teacher_assignments teacher_assignments_headteacher_insert; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY teacher_assignments_headteacher_insert ON public.teacher_assignments FOR INSERT TO authenticated WITH CHECK (((school_id = public.headteacher_school_id(auth.uid())) AND (EXISTS ( SELECT 1
+   FROM public.profiles staff
+  WHERE ((staff.id = teacher_assignments.teacher_id) AND (staff.school_id = teacher_assignments.school_id) AND (staff.role = ANY (ARRAY['teacher'::text, 'headteacher'::text]))))) AND (EXISTS ( SELECT 1
+   FROM public.classes class
+  WHERE ((class.id = teacher_assignments.class_id) AND (class.school_id = teacher_assignments.school_id)))) AND (EXISTS ( SELECT 1
+   FROM public.subjects subject
+  WHERE ((subject.id = teacher_assignments.subject_id) AND (subject.school_id = teacher_assignments.school_id))))));
+
+
+--
+-- Name: teacher_assignments teacher_assignments_headteacher_select; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY teacher_assignments_headteacher_select ON public.teacher_assignments FOR SELECT TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid())));
+
+
+--
+-- Name: teacher_assignments teacher_assignments_headteacher_update; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY teacher_assignments_headteacher_update ON public.teacher_assignments FOR UPDATE TO authenticated USING ((school_id = public.headteacher_school_id(auth.uid()))) WITH CHECK (((school_id = public.headteacher_school_id(auth.uid())) AND (EXISTS ( SELECT 1
+   FROM public.profiles staff
+  WHERE ((staff.id = teacher_assignments.teacher_id) AND (staff.school_id = teacher_assignments.school_id) AND (staff.role = ANY (ARRAY['teacher'::text, 'headteacher'::text]))))) AND (EXISTS ( SELECT 1
+   FROM public.classes class
+  WHERE ((class.id = teacher_assignments.class_id) AND (class.school_id = teacher_assignments.school_id)))) AND (EXISTS ( SELECT 1
+   FROM public.subjects subject
+  WHERE ((subject.id = teacher_assignments.subject_id) AND (subject.school_id = teacher_assignments.school_id))))));
 
 
 --
@@ -4205,6 +4429,15 @@ GRANT ALL ON FUNCTION public.rls_auto_enable() TO service_role;
 
 
 --
+-- Name: FUNCTION save_school_academic_year(p_academic_year_id uuid, p_label text, p_start_date date, p_end_date date, p_terms jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.save_school_academic_year(p_academic_year_id uuid, p_label text, p_start_date date, p_end_date date, p_terms jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_school_academic_year(p_academic_year_id uuid, p_label text, p_start_date date, p_end_date date, p_terms jsonb) TO authenticated;
+GRANT ALL ON FUNCTION public.save_school_academic_year(p_academic_year_id uuid, p_label text, p_start_date date, p_end_date date, p_terms jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION score_to_letter(p_school_id uuid, p_score numeric); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -4557,65 +4790,28 @@ GRANT ALL ON TABLE public.weekly_performance_reviews TO service_role;
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
-
-
 --
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
 --
-
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
-
 
 --
 -- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
-
-
 --
 -- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
 --
-
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
-
 
 --
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO service_role;
-
-
 --
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
 --
-
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO service_role;
-
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict vsyh5alImhiGlrtZypCMZqQdv3RkPTwVaYXZC9u7ZlWCYiAzUOSNf4AkrywgLzK
 

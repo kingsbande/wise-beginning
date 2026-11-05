@@ -88,6 +88,7 @@ export function EnterGradesTab() {
 
       await saveGrades({
         schoolId: profile!.school_id,
+        classId,
         termId,
         subjectId,
         assessmentType,
