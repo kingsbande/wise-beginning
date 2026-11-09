@@ -51,22 +51,33 @@ export default async function handler(req: Req, res: Res) {
     return
   }
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/get_school_branding`, {
-    method: 'POST',
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ p_slug: slug }),
-  })
+  let rows: Array<{ name: string; logo_url: string | null }>
+  try {
+    const response = await fetch(
+      `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/get_school_branding`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ p_slug: slug }),
+      },
+    )
 
-  if (!response.ok) {
-    res.status(502).json({ error: 'Could not load school' })
+    if (!response.ok) {
+      console.error('get_school_branding failed', response.status, await response.text())
+      res.status(502).json({ error: 'Could not load school' })
+      return
+    }
+
+    rows = (await response.json()) as Array<{ name: string; logo_url: string | null }>
+  } catch (error) {
+    console.error('manifest lookup threw', error)
+    res.status(502).json({ error: 'Could not reach the school service' })
     return
   }
-
-  const rows = (await response.json()) as Array<{ name: string; logo_url: string | null }>
   const school = rows[0]
   if (!school) {
     res.status(404).json({ error: 'School not found' })
