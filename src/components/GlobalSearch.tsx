@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Search, X } from 'lucide-react'
 import { searchEverything } from '../lib/globalSearchApi'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
+import { useFeatures } from '../context/FeaturesContext'
 
 interface GlobalSearchProps {
   onSelectStudent: (name: string) => void
@@ -12,6 +13,7 @@ interface GlobalSearchProps {
 }
 
 export function GlobalSearch({ onSelectStudent, onSelectParent, onSelectStaff, theme = 'dark' }: GlobalSearchProps) {
+  const { isEnabled } = useFeatures()
   const [term, setTerm] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const debouncedTerm = useDebouncedValue(term, 300)
@@ -33,8 +35,9 @@ export function GlobalSearch({ onSelectStudent, onSelectParent, onSelectStaff, t
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  const parentResults = isEnabled('parent_portal') ? data?.parents ?? [] : []
   const hasResults =
-    !!data && (data.students.length > 0 || data.parents.length > 0 || data.staff.length > 0)
+    !!data && (data.students.length > 0 || parentResults.length > 0 || data.staff.length > 0)
 
   function selectStudent(name: string) {
     onSelectStudent(name)
@@ -121,12 +124,12 @@ export function GlobalSearch({ onSelectStudent, onSelectParent, onSelectStaff, t
                 </div>
               )}
 
-              {data!.parents.length > 0 && (
+              {parentResults.length > 0 && (
                 <div>
                   <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
                     Parent Accounts
                   </p>
-                  {data!.parents.map((r) => (
+                  {parentResults.map((r) => (
                     <button
                       key={r.id}
                       onClick={() => selectParent(r.label)}

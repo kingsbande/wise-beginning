@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useParentAuth } from '../../context/ParentAuthContext'
+import { FeatureName, useFeatures } from '../../context/FeaturesContext'
 import { fetchStudentFeeSummary } from '../../lib/feesApi'
 import { fetchMyStudent } from '../../lib/parent/parentApi'
 import { LoadingScreen } from '../../components/LoadingScreen'
@@ -30,11 +31,28 @@ const TABS: { id: Tab; label: string; icon: typeof GraduationCap }[] = [
   { id: 'fees', label: 'Fees', icon: Wallet },
 ]
 
+const TAB_FEATURES: Partial<Record<Tab, FeatureName>> = {
+  grades: 'grades',
+  progress: 'progress_reports',
+  fees: 'fees',
+}
+
 export function ParentDashboard() {
   const { parentProfile } = useParentAuth()
+  const { ready: featuresReady, isEnabled } = useFeatures()
   const [tab, setTab] = useState<Tab>('reviews')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const visibleTabs = TABS.filter(({ id }) => {
+    const feature = TAB_FEATURES[id]
+    return !feature || isEnabled(feature)
+  })
+
+  useEffect(() => {
+    if (!featuresReady) return
+    const feature = TAB_FEATURES[tab]
+    if (feature && !isEnabled(feature)) setTab(visibleTabs[0]?.id ?? 'reviews')
+  }, [featuresReady, tab, isEnabled])
 
   useEffect(() => {
     document.body.style.overflow = isMobileMenuOpen ? 'hidden' : ''
@@ -156,7 +174,7 @@ export function ParentDashboard() {
           </div>
 
           <nav className="flex flex-col gap-1">
-            {TABS.map(({ id, label, icon: Icon }) => {
+            {visibleTabs.map(({ id, label, icon: Icon }) => {
               const isActive = tab === id
               return (
                 <button
@@ -216,7 +234,7 @@ export function ParentDashboard() {
                     <span className="rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-100">
                       Active learner
                     </span>
-                    {outstandingBalance > 0 && (
+                    {isEnabled('fees') && outstandingBalance > 0 && (
                       <span className="rounded-full border border-amber-300/30 bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-100">
                         Balance: MWK {outstandingBalance.toLocaleString()}
                       </span>
@@ -228,16 +246,16 @@ export function ParentDashboard() {
             </section>
 
             <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.8)] sm:p-6">
-              {isFeeError && (
+              {isEnabled('fees') && isFeeError && (
                 <div role="status" className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <Wallet className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
                   <p>Fee information is temporarily unavailable. Your academic records are still available.</p>
                 </div>
               )}
-              {tab === 'grades' && <GradesTab student={student} />}
-              {tab === 'progress' && <ProgressReportTab student={student} />}
+              {tab === 'grades' && isEnabled('grades') && <GradesTab student={student} />}
+              {tab === 'progress' && isEnabled('progress_reports') && <ProgressReportTab student={student} />}
               {tab === 'reviews' && <WeeklyReviewsTab student={student} />}
-              {tab === 'fees' && <FeesTab student={student} />}
+              {tab === 'fees' && isEnabled('fees') && <FeesTab student={student} />}
             </section>
         </section>
       </main>

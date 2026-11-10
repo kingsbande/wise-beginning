@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { FeaturesProvider } from './context/FeaturesContext'
+import { FeatureRoute } from './components/FeatureRoute'
 import { SchoolProvider } from './context/SchoolContext'
 import { SchoolGate } from './components/SchoolGate'
 import { getRouterBasename } from './lib/schoolSlug'
@@ -75,9 +76,11 @@ export default function App() {
               path="/admin/parent-accounts"
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
-                  <ErrorBoundary>
-                    <ParentAccounts />
-                  </ErrorBoundary>
+                  <FeatureRoute name="parent_portal">
+                    <ErrorBoundary>
+                      <ParentAccounts />
+                    </ErrorBoundary>
+                  </FeatureRoute>
                 </ProtectedRoute>
               }
             />
@@ -85,9 +88,11 @@ export default function App() {
               path="/admin/grades"
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
-                  <ErrorBoundary>
-                    <Grades />
-                  </ErrorBoundary>
+                  <FeatureRoute name="grades">
+                    <ErrorBoundary>
+                      <Grades />
+                    </ErrorBoundary>
+                  </FeatureRoute>
                 </ProtectedRoute>
               }
             />
@@ -128,7 +133,9 @@ export default function App() {
                 path="/parent"
                 element={
                   <ParentProtectedRoute>
-                    <ParentDashboard />
+                    <FeatureRoute name="parent_portal">
+                      <ParentDashboard />
+                    </FeatureRoute>
                   </ParentProtectedRoute>
                 }
               />

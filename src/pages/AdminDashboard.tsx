@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { FeatureName, useFeatures } from '../context/FeaturesContext'
 import { ParentAccounts } from '../pages/ParentAccounts'
 import { StudentRegistrationForm } from '../components/StudentRegistrationForm'
 import { StudentList } from '../components/StudentList'
@@ -36,6 +37,7 @@ import { CurriculumProgressView } from '../components/admin/CurriculumProgressVi
 import { AdminNotificationCenter } from '../components/admin/AdminNotificationCenter'
 import { GlobalSearch } from '../components/GlobalSearch'
 import { SchoolLogo } from '../components/SchoolLogo'
+import { LoadingScreen } from '../components/LoadingScreen'
 import { supabase } from '../lib/supabaseClient'
 import { useCloseOnDesktop } from '../lib/useCloseOnDesktop'
 
@@ -64,6 +66,15 @@ const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ]
 
+const VIEW_FEATURES: Partial<Record<View, FeatureName>> = {
+  parents: 'parent_portal',
+  grades: 'grades',
+  attendance: 'attendance',
+  curriculum: 'curriculum_topics',
+  'academic-progress': 'weekly_assessments',
+  fees: 'fees',
+}
+
 // Views that live only in the drawer/sidebar on mobile. When one of these is
 // active, the "More" tab in the bottom bar highlights so users can tell where
 // they are.
@@ -78,11 +89,10 @@ function getInitials(name?: string | null) {
 
 export function AdminDashboard() {
   const { profile, signOut } = useAuth()
+  const { ready: featuresReady, isEnabled } = useFeatures()
   const [refreshKey, setRefreshKey] = useState(0)
-  const [activeView, setActiveView] = useState<View>(() => {
-    const saved = sessionStorage.getItem('adminDashboardView') as View | null
-    return saved && NAV_ITEMS.some((item) => item.id === saved) ? saved : 'overview'
-  })
+  const [activeView, setActiveView] = useState<View>('overview')
+  const [viewResolved, setViewResolved] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
@@ -97,9 +107,24 @@ export function AdminDashboard() {
   const [parentSearchSeed, setParentSearchSeed] = useState('')
   const [staffSearchSeed, setStaffSearchSeed] = useState('')
 
+  const isViewEnabled = (id: View) => {
+    const feature = VIEW_FEATURES[id]
+    return !feature || isEnabled(feature)
+  }
+  const visibleNavItems = NAV_ITEMS.filter(({ id }) => isViewEnabled(id))
+
   useEffect(() => {
+    if (!featuresReady || viewResolved) return
+    const saved = sessionStorage.getItem('adminDashboardView') as View | null
+    const fallback = visibleNavItems[0]?.id ?? 'overview'
+    setActiveView(saved && visibleNavItems.some((item) => item.id === saved) ? saved : fallback)
+    setViewResolved(true)
+  }, [featuresReady, isEnabled, viewResolved])
+
+  useEffect(() => {
+    if (!viewResolved) return
     sessionStorage.setItem('adminDashboardView', activeView)
-  }, [activeView])
+  }, [activeView, viewResolved])
 
   // Close the profile dropdown when clicking outside of it
   useEffect(() => {
@@ -206,6 +231,8 @@ export function AdminDashboard() {
     setStaffSearchSeed(name)
     setActiveView('staff')
   }
+
+  if (!featuresReady || !viewResolved) return <LoadingScreen />
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
@@ -410,7 +437,7 @@ export function AdminDashboard() {
           </div>
 
           <nav className="flex flex-col gap-1">
-            {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+            {visibleNavItems.map(({ id, label, icon: Icon }) => {
               const isActive = activeView === id
               return (
                 <button
@@ -661,7 +688,7 @@ export function AdminDashboard() {
                   </button>
 
                   {/* 3. Parent Accounts */}
-                  <button
+                  {isEnabled('parent_portal') && <button
                     onClick={() => setActiveView('parents')}
                     className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                   >
@@ -672,10 +699,10 @@ export function AdminDashboard() {
                       <p className="text-xs font-semibold text-slate-900 sm:text-sm">Parents</p>
                       <p className="text-[11px] text-slate-500">Accounts</p>
                     </div>
-                  </button>
+                  </button>}
 
                   {/* 4. Grades */}
-                  <button
+                  {isEnabled('grades') && <button
                     onClick={() => setActiveView('grades')}
                     className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                   >
@@ -686,7 +713,7 @@ export function AdminDashboard() {
                       <p className="text-xs font-semibold text-slate-900 sm:text-sm">Grades</p>
                       <p className="text-[11px] text-slate-500">Reports</p>
                     </div>
-                  </button>
+                  </button>}
 
                   {/* 5. Staff */}
                   <button
@@ -703,7 +730,7 @@ export function AdminDashboard() {
                   </button>
 
                   {/* 6. Attendance */}
-                  <button
+                  {isEnabled('attendance') && <button
                     onClick={() => setActiveView('attendance')}
                     className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                   >
@@ -714,10 +741,10 @@ export function AdminDashboard() {
                       <p className="text-xs font-semibold text-slate-900 sm:text-sm">Attendance</p>
                       <p className="text-[11px] text-slate-500">Daily records</p>
                     </div>
-                  </button>
+                  </button>}
 
                   {/* 7. Manage Fees */}
-                  <button
+                  {isEnabled('fees') && <button
                     onClick={() => setActiveView('fees')}
                     className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                   >
@@ -728,7 +755,7 @@ export function AdminDashboard() {
                       <p className="text-xs font-semibold text-slate-900 sm:text-sm">Manage fees</p>
                       <p className="text-[11px] text-slate-500">Payment setup</p>
                     </div>
-                  </button>
+                  </button>}
                 </div>
               </div>
             </>
@@ -745,7 +772,7 @@ export function AdminDashboard() {
                 { id: 'students', label: 'Students', icon: BookOpen },
                 { id: 'grades', label: 'Grades', icon: BarChart3 },
               ] as const
-            ).map(({ id, label, icon: Icon }) => (
+            ).filter(({ id }) => isViewEnabled(id)).map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
@@ -782,21 +809,21 @@ export function AdminDashboard() {
 
           {activeView === 'students' && <StudentList initialSearch={studentSearchSeed} />}
 
-          {activeView === 'parents' && <ParentAccounts initialSearch={parentSearchSeed} />}
+          {activeView === 'parents' && isEnabled('parent_portal') && <ParentAccounts initialSearch={parentSearchSeed} />}
 
-          {activeView === 'grades' && <Grades />}
+          {activeView === 'grades' && isEnabled('grades') && <Grades />}
 
           {activeView === 'staff' && <Staff initialSearch={staffSearchSeed} />}
 
-          {activeView === 'attendance' && <Attendance />}
+          {activeView === 'attendance' && isEnabled('attendance') && <Attendance />}
 
           {activeView === 'reviews' && <AdminReviewsView />}
 
-          {activeView === 'curriculum' && <CurriculumProgressView />}
+          {activeView === 'curriculum' && isEnabled('curriculum_topics') && <CurriculumProgressView />}
 
-          {activeView === 'academic-progress' && <AcademicProgressView />}
+          {activeView === 'academic-progress' && isEnabled('weekly_assessments') && <AcademicProgressView />}
 
-          {activeView === 'fees' && <Fees />}
+          {activeView === 'fees' && isEnabled('fees') && <Fees />}
 
           {activeView === 'analytics' && <Analytics />}
 

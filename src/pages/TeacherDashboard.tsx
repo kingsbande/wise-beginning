@@ -28,6 +28,7 @@ import {
   LibraryBig,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { FeatureName, useFeatures } from '../context/FeaturesContext'
 import { fetchTeacherAssignments } from '../lib/staff/staffApi'
 import { fetchMyClassTeacherClasses, normalizeClassId } from '../lib/attendanceApi'
 import { fetchClasses, fetchStudentsPage, PAGE_SIZE } from '../lib/queries'
@@ -44,6 +45,7 @@ import { ChangePasswordForm } from '../components/settings/ChangePasswordForm'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { Pagination } from '../components/Pagination'
 import { SchoolLogo } from '../components/SchoolLogo'
+import { LoadingScreen } from '../components/LoadingScreen'
 import { useCloseOnDesktop } from '../lib/useCloseOnDesktop'
 
 type View = 'overview' | 'attendance' | 'grades' | 'students' | 'curriculum' | 'academic-progress' | 'assignments' | 'verify-topics' | 'reviews' | 'settings'
@@ -72,6 +74,14 @@ const HEADTEACHER_NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashb
   ...NAV_ITEMS.slice(6),
 ]
 
+const VIEW_FEATURES: Partial<Record<View, FeatureName>> = {
+  attendance: 'attendance',
+  grades: 'grades',
+  curriculum: 'curriculum_topics',
+  'academic-progress': 'weekly_assessments',
+  'verify-topics': 'curriculum_topics',
+}
+
 function getInitials(name?: string | null) {
   if (!name) return 'T'
   const parts = name.trim().split(/\s+/)
@@ -85,16 +95,21 @@ export function TeacherDashboard({
   allSchoolClasses = false,
 }: TeacherDashboardProps = {}) {
   const { profile, signOut } = useAuth()
-  const navItems = profile?.role === 'headteacher' ? HEADTEACHER_NAV_ITEMS : NAV_ITEMS
+  const { ready: featuresReady, isEnabled } = useFeatures()
+  const isViewEnabled = (id: View) => {
+    const feature = VIEW_FEATURES[id]
+    return !feature || isEnabled(feature)
+  }
+  const baseNavItems = profile?.role === 'headteacher' ? HEADTEACHER_NAV_ITEMS : NAV_ITEMS
+  const navItems = baseNavItems.filter(({ id }) => isViewEnabled(id))
   const mobilePrimaryViewIds: View[] =
     profile?.role === 'headteacher'
       ? ['overview', 'grades', 'academic-progress', 'assignments']
       : ['overview', 'attendance', 'grades', 'students']
-  const mobileNavItems = navItems.filter((item) => mobilePrimaryViewIds.includes(item.id))
-  const [activeView, setActiveView] = useState<View>(() => {
-    const saved = sessionStorage.getItem(storageKey) as View | null
-    return saved && [...NAV_ITEMS, ...HEADTEACHER_NAV_ITEMS].some((item) => item.id === saved) ? saved : 'overview'
-  })
+  const visibleMobilePrimaryViewIds = mobilePrimaryViewIds.filter(isViewEnabled)
+  const mobileNavItems = navItems.filter((item) => visibleMobilePrimaryViewIds.includes(item.id))
+  const [activeView, setActiveView] = useState<View>('overview')
+  const [viewResolved, setViewResolved] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
@@ -111,8 +126,17 @@ export function TeacherDashboard({
   const debouncedRosterSearch = useDebouncedValue(rosterSearch)
 
   useEffect(() => {
+    if (!featuresReady || !profile || viewResolved) return
+    const saved = sessionStorage.getItem(storageKey) as View | null
+    const fallback = navItems[0]?.id ?? 'overview'
+    setActiveView(saved && navItems.some((item) => item.id === saved) ? saved : fallback)
+    setViewResolved(true)
+  }, [featuresReady, profile?.role, storageKey, isEnabled, viewResolved])
+
+  useEffect(() => {
+    if (!viewResolved) return
     sessionStorage.setItem(storageKey, activeView)
-  }, [activeView, storageKey])
+  }, [activeView, storageKey, viewResolved])
 
   useEffect(() => {
     if (
@@ -270,6 +294,8 @@ export function TeacherDashboard({
     }
     setActiveView('students')
   }
+
+  if (!featuresReady || !viewResolved) return <LoadingScreen />
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
@@ -616,7 +642,7 @@ export function TeacherDashboard({
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
+                {isEnabled('grades') && <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                       <BarChart3 className="h-5 w-5" />
@@ -627,7 +653,7 @@ export function TeacherDashboard({
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-slate-400">Midterm & End of Term</p>
-                </div>
+                </div>}
               </div>
 
               {/* Quick Actions */}
@@ -640,7 +666,7 @@ export function TeacherDashboard({
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
-                  <button
+                  {isEnabled('attendance') && <button
                     onClick={() => handleJumpToAttendance()}
                     className="group flex flex-col items-start justify-between rounded-xl border border-rose-100 bg-rose-50/50 p-3.5 text-left transition-all hover:border-rose-300 hover:bg-rose-50 hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                   >
@@ -651,9 +677,9 @@ export function TeacherDashboard({
                       <p className="text-xs font-semibold text-slate-900 sm:text-sm">Attendance</p>
                       <p className="text-[11px] text-slate-500">Mark daily roll</p>
                     </div>
-                  </button>
+                  </button>}
 
-                  <button
+                  {isEnabled('grades') && <button
                     onClick={handleJumpToGrades}
                     className="group flex flex-col items-start justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                   >
@@ -664,7 +690,7 @@ export function TeacherDashboard({
                       <p className="text-xs font-semibold text-slate-900 sm:text-sm">Grades</p>
                       <p className="text-[11px] text-slate-500">Enter scores</p>
                     </div>
-                  </button>
+                  </button>}
 
                   <button
                     onClick={() => handleJumpToRoster()}
@@ -714,13 +740,13 @@ export function TeacherDashboard({
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button
+                      {isEnabled('attendance') && <button
                         onClick={() => handleJumpToAttendance(classTeacherClasses[0]?.id)}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                       >
                         <CalendarCheck className="h-3.5 w-3.5" />
                         Mark Attendance Now
-                      </button>
+                      </button>}
                     </div>
                   </div>
 
@@ -741,12 +767,12 @@ export function TeacherDashboard({
                           >
                             Roster
                           </button>
-                          <button
+                          {isEnabled('attendance') && <button
                             onClick={() => handleJumpToAttendance(c.id)}
                             className="rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
                           >
                             Roll Call
-                          </button>
+                          </button>}
                         </div>
                       </div>
                     ))}
@@ -828,13 +854,13 @@ export function TeacherDashboard({
                             <Users className="h-3.5 w-3.5 text-slate-400" />
                             Class Roster
                           </button>
-                          <button
+                          {isEnabled('grades') && <button
                             onClick={handleJumpToGrades}
                             className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-700"
                           >
                             Enter Grades
                             <ArrowRight className="h-3 w-3" />
-                          </button>
+                          </button>}
                         </div>
                       </div>
                     ))}
@@ -847,7 +873,7 @@ export function TeacherDashboard({
           {/* ========================================================= */}
           {/* 2. ATTENDANCE VIEW                                        */}
           {/* ========================================================= */}
-          {activeView === 'attendance' && (
+          {activeView === 'attendance' && isEnabled('attendance') && (
             <div className="space-y-4 sm:space-y-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
@@ -936,7 +962,7 @@ export function TeacherDashboard({
           {/* ========================================================= */}
           {/* 3. GRADES VIEW                                            */}
           {/* ========================================================= */}
-          {activeView === 'grades' && (
+          {activeView === 'grades' && isEnabled('grades') && (
             <div className="space-y-4 sm:space-y-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <div className="border-b border-slate-100 pb-4 mb-4">
@@ -1122,7 +1148,7 @@ export function TeacherDashboard({
             <TeacherReviewsView distinctClasses={distinctClasses} />
           )}
 
-          {activeView === 'curriculum' && profile && (
+          {activeView === 'curriculum' && isEnabled('curriculum_topics') && profile && (
             <TeacherCurriculumView
               assignments={assignments}
               teacherId={profile.id}
@@ -1131,7 +1157,7 @@ export function TeacherDashboard({
             />
           )}
 
-          {activeView === 'academic-progress' && (
+          {activeView === 'academic-progress' && isEnabled('weekly_assessments') && (
             <div className="space-y-4 sm:space-y-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
                 <AcademicProgressView allowedClassIds={academicProgressClassIds} />
@@ -1143,7 +1169,7 @@ export function TeacherDashboard({
             <HeadteacherAssignmentsView />
           )}
 
-          {activeView === 'verify-topics' && profile?.role === 'headteacher' && (
+          {activeView === 'verify-topics' && isEnabled('curriculum_topics') && profile?.role === 'headteacher' && (
             <CurriculumProgressView reviewerRole="headteacher" />
           )}
 
@@ -1201,11 +1227,11 @@ export function TeacherDashboard({
             aria-label="Open more navigation options"
             aria-expanded={isMobileMenuOpen}
             className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-[11px] font-medium transition-colors ${
-              mobilePrimaryViewIds.includes(activeView) ? 'text-slate-500 hover:text-slate-800' : 'font-semibold text-rose-600'
+              visibleMobilePrimaryViewIds.includes(activeView) ? 'text-slate-500 hover:text-slate-800' : 'font-semibold text-rose-600'
             }`}
           >
             <MoreHorizontal className={`h-5 w-5 ${
-              mobilePrimaryViewIds.includes(activeView) ? 'text-slate-400' : 'text-rose-600'
+              visibleMobilePrimaryViewIds.includes(activeView) ? 'text-slate-400' : 'text-rose-600'
             }`} />
             <span>More</span>
           </button>

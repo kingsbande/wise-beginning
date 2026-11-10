@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchClasses } from '../../lib/queries'
 import { useAuth } from '../../context/AuthContext'
+import { useFeatures } from '../../context/FeaturesContext'
 import {
   fetchGradeGrid,
   fetchProgressGrid,
@@ -17,9 +18,13 @@ type Mode = 'grades' | 'progress'
 
 export function EnterGradesTab() {
   const { profile } = useAuth()
+  const { ready: featuresReady, isEnabled } = useFeatures()
   const queryClient = useQueryClient()
 
   const [mode, setMode] = useState<Mode>('grades')
+  const visibleModes = (['grades', 'progress'] as Mode[]).filter((item) =>
+    isEnabled(item === 'grades' ? 'grades' : 'progress_reports'),
+  )
   const [classId, setClassId] = useState('')
   const [termId, setTermId] = useState('')
   const [subjectId, setSubjectId] = useState('')
@@ -57,6 +62,13 @@ export function EnterGradesTab() {
 
   const [scoreDrafts, setScoreDrafts] = useState<Record<string, string>>({})
   const [progressDrafts, setProgressDrafts] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const feature = mode === 'grades' ? 'grades' : 'progress_reports'
+    if (featuresReady && !isEnabled(feature)) {
+      setMode(visibleModes[0] ?? 'grades')
+    }
+  }, [featuresReady, mode, isEnabled])
 
   useEffect(() => {
     if (gradeGridQuery.data) {
@@ -130,26 +142,19 @@ export function EnterGradesTab() {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6">
       <div className="mb-4 flex gap-2">
-        <button
-          onClick={() => setMode('grades')}
-          className={
-            mode === 'grades'
-              ? 'rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white'
-              : 'rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100'
-          }
-        >
-          Subject Grades
-        </button>
-        <button
-          onClick={() => setMode('progress')}
-          className={
-            mode === 'progress'
-              ? 'rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white'
-              : 'rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100'
-          }
-        >
-          Progress Report
-        </button>
+        {visibleModes.map((item) => (
+          <button
+            key={item}
+            onClick={() => setMode(item)}
+            className={
+              mode === item
+                ? 'rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white'
+                : 'rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100'
+            }
+          >
+            {item === 'grades' ? 'Subject Grades' : 'Progress Report'}
+          </button>
+        ))}
       </div>
 
       <div className="grid gap-2 sm:flex sm:flex-wrap">
@@ -207,7 +212,7 @@ export function EnterGradesTab() {
         )}
       </div>
 
-      {mode === 'grades' && (
+      {mode === 'grades' && isEnabled('grades') && (
         <div className="mt-5">
           {classId === '' || termId === '' || subjectId === '' ? (
             <p className="text-sm text-gray-500">
@@ -268,7 +273,7 @@ export function EnterGradesTab() {
         </div>
       )}
 
-      {mode === 'progress' && (
+      {mode === 'progress' && isEnabled('progress_reports') && (
         <div className="mt-5">
           {classId === '' || termId === '' ? (
             <p className="text-sm text-gray-500">Choose a class and term to load the progress sheet.</p>

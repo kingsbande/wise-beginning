@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchClasses } from '../../lib/queries'
 import { uploadImage } from '../../lib/cloudinary'
 import { useAuth } from '../../context/AuthContext'
+import { Feature } from '../../context/FeaturesContext'
 import { AcademicCalendarSetup } from '../settings/AcademicCalendarSetup'
 import {
   addProgressReportField,
@@ -274,7 +275,8 @@ export function SetupTab() {
       <AcademicCalendarSetup />
 
       {/* Progress report fields */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6">
+      <Feature name="progress_reports">
+        <section className="rounded-xl border border-gray-200 bg-white p-6">
         <h3 className="text-base font-semibold text-gray-900">Progress Report Fields</h3>
         <p className="mt-1 text-sm text-gray-500">
           These are the sections that appear on every student's progress report — add whatever your
@@ -310,7 +312,8 @@ export function SetupTab() {
             </li>
           ))}
         </ul>
-      </section>
+        </section>
+      </Feature>
     </div>
   )
 }

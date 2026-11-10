@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../context/AuthContext'
+import { Feature } from '../../context/FeaturesContext'
 import { fetchClasses } from '../../lib/queries'
 import { fetchSubjects } from '../../lib/gradesApi'
 import {
@@ -153,7 +154,8 @@ function TeacherDetailPanel({ teacherId }: { teacherId: string }) {
   return (
     <div className="space-y-6 rounded-lg bg-gray-50 p-4">
       {/* Personal + professional details */}
-      <form onSubmit={handleSaveDetails} className="space-y-3">
+      <Feature name="staff_records">
+        <form onSubmit={handleSaveDetails} className="space-y-3">
         <h4 className="text-sm font-semibold text-gray-900">Personal & Professional Details</h4>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
@@ -303,10 +305,12 @@ function TeacherDetailPanel({ teacherId }: { teacherId: string }) {
           </button>
           {savedMessage && <span className="text-xs text-green-600">Saved.</span>}
         </div>
-      </form>
+        </form>
+      </Feature>
 
       {/* Certifications */}
-      <div className="border-t border-gray-200 pt-4">
+      <Feature name="staff_records">
+        <div className="border-t border-gray-200 pt-4">
         <h4 className="text-sm font-semibold text-gray-900">Certifications & Training</h4>
         <form onSubmit={handleAddCert} className="mt-2 flex flex-wrap gap-2">
           <input
@@ -358,7 +362,8 @@ function TeacherDetailPanel({ teacherId }: { teacherId: string }) {
             </li>
           ))}
         </ul>
-      </div>
+        </div>
+      </Feature>
 
       {/* Assignments */}
       <div className="border-t border-gray-200 pt-4">

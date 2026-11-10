@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchClasses } from '../../lib/queries'
 import { useAuth } from '../../context/AuthContext'
+import { useFeatures } from '../../context/FeaturesContext'
 import {
   fetchGradeRelease,
   fetchGradeScale,
@@ -17,6 +18,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 
 export function ViewGradesTab() {
   const { profile } = useAuth()
+  const { isEnabled } = useFeatures()
   const queryClient = useQueryClient()
 
   const [classId, setClassId] = useState('')
@@ -219,13 +221,15 @@ export function ViewGradesTab() {
                         >
                           Grade Report PDF
                         </button>
-                        <button
-                          onClick={() => handleDownloadProgressReport(row)}
-                          disabled={downloadingId === `progress-${row.student_id}`}
-                          className="text-xs font-medium text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
-                        >
-                          Progress Report PDF
-                        </button>
+                        {isEnabled('progress_reports') && (
+                          <button
+                            onClick={() => handleDownloadProgressReport(row)}
+                            disabled={downloadingId === `progress-${row.student_id}`}
+                            className="text-xs font-medium text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
+                          >
+                            Progress Report PDF
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
