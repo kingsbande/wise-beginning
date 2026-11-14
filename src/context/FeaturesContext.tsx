@@ -9,6 +9,8 @@ export type FeatureName =
   | 'grades'
   | 'weekly_assessments'
   | 'curriculum_topics'
+  | 'analytics'
+  | 'weekly_reviews'
   | 'promotions'
   | 'progress_reports'
   | 'parent_portal'

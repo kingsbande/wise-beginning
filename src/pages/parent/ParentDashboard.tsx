@@ -34,6 +34,7 @@ const TABS: { id: Tab; label: string; icon: typeof GraduationCap }[] = [
 const TAB_FEATURES: Partial<Record<Tab, FeatureName>> = {
   grades: 'grades',
   progress: 'progress_reports',
+  reviews: 'weekly_reviews',
   fees: 'fees',
 }
 
@@ -51,7 +52,7 @@ export function ParentDashboard() {
   useEffect(() => {
     if (!featuresReady) return
     const feature = TAB_FEATURES[tab]
-    if (feature && !isEnabled(feature)) setTab(visibleTabs[0]?.id ?? 'reviews')
+    if (feature && !isEnabled(feature)) setTab(visibleTabs[0]?.id ?? 'grades')
   }, [featuresReady, tab, isEnabled])
 
   useEffect(() => {
@@ -254,7 +255,11 @@ export function ParentDashboard() {
               )}
               {tab === 'grades' && isEnabled('grades') && <GradesTab student={student} />}
               {tab === 'progress' && isEnabled('progress_reports') && <ProgressReportTab student={student} />}
-              {tab === 'reviews' && <WeeklyReviewsTab student={student} />}
+              {visibleTabs.length === 0 ? (
+                <p role="status" className="text-sm text-slate-500">No parent features are enabled for this school.</p>
+              ) : tab === 'reviews' && isEnabled('weekly_reviews') ? (
+                <WeeklyReviewsTab student={student} />
+              ) : null}
               {tab === 'fees' && isEnabled('fees') && <FeesTab student={student} />}
             </section>
         </section>

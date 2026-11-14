@@ -80,6 +80,7 @@ const VIEW_FEATURES: Partial<Record<View, FeatureName>> = {
   curriculum: 'curriculum_topics',
   'academic-progress': 'weekly_assessments',
   'verify-topics': 'curriculum_topics',
+  reviews: 'weekly_reviews',
 }
 
 function getInitials(name?: string | null) {
@@ -1144,7 +1145,7 @@ export function TeacherDashboard({
           {/* ========================================================= */}
           {/* 5. REVIEWS VIEW                                           */}
           {/* ========================================================= */}
-          {activeView === 'reviews' && (
+          {activeView === 'reviews' && isEnabled('weekly_reviews') && (
             <TeacherReviewsView distinctClasses={distinctClasses} />
           )}
 

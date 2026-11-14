@@ -38,6 +38,7 @@ const TeacherDashboard = lazy(() =>
   import('./pages/TeacherDashboard').then((m) => ({ default: m.TeacherDashboard })),
 )
 const Staff = lazy(() => import('./pages/Staff').then((m) => ({ default: m.Staff })))
+const Platform = lazy(() => import('./pages/Platform').then((m) => ({ default: m.Platform })))
 const ForceChangePasswordStaff = lazy(() =>
   import('./pages/Staff/ForceChangePasswordStaff').then((m) => ({
     default: m.ForceChangePasswordStaff,
@@ -102,6 +103,16 @@ export default function App() {
                 <ProtectedRoute allowedRoles={['admin']}>
                   <ErrorBoundary>
                     <Staff />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/platform"
+              element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <Platform />
                   </ErrorBoundary>
                 </ProtectedRoute>
               }

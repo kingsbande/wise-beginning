@@ -73,6 +73,8 @@ const VIEW_FEATURES: Partial<Record<View, FeatureName>> = {
   curriculum: 'curriculum_topics',
   'academic-progress': 'weekly_assessments',
   fees: 'fees',
+  reviews: 'weekly_reviews',
+  analytics: 'analytics',
 }
 
 // Views that live only in the drawer/sidebar on mobile. When one of these is
@@ -817,7 +819,7 @@ export function AdminDashboard() {
 
           {activeView === 'attendance' && isEnabled('attendance') && <Attendance />}
 
-          {activeView === 'reviews' && <AdminReviewsView />}
+          {activeView === 'reviews' && isEnabled('weekly_reviews') && <AdminReviewsView />}
 
           {activeView === 'curriculum' && isEnabled('curriculum_topics') && <CurriculumProgressView />}
 
@@ -825,7 +827,7 @@ export function AdminDashboard() {
 
           {activeView === 'fees' && isEnabled('fees') && <Fees />}
 
-          {activeView === 'analytics' && <Analytics />}
+          {activeView === 'analytics' && isEnabled('analytics') && <Analytics />}
 
           {activeView === 'settings' && <SettingsPage />}
         </section>
