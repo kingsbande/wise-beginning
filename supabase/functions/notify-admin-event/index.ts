@@ -87,7 +87,7 @@ async function createNotification(
   if (!admins?.length) return
 
   const { error } = await supabaseAdmin.from('admin_notifications').insert(
-    admins.map((admin) => ({
+    admins.map((admin: { id: string }) => ({
       school_id: schoolId,
       recipient_id: admin.id,
       event_type: eventType,
