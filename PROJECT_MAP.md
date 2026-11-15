@@ -32,6 +32,7 @@ academy-april/
 │   │   ├── confirm-parent-password-changed/
 │   │   ├── create-staff-account/
 │   │   ├── confirm-staff-password-changed/
+│   │   ├── reset-staff-password/
 │   │   └── notify-registration/
 │   └── migrations/             # SQL schema migrations
 ├── src/
@@ -175,6 +176,7 @@ academy-april/
 | `delete-parent-account` | `supabase/functions/delete-parent-account/` | Deletes parent login record |
 | `confirm-parent-password-changed` | `supabase/functions/confirm-parent-password-changed/` | Sets permanent password for parent |
 | `create-staff-account` | `supabase/functions/create-staff-account/` | Creates Supabase auth user with role & profile |
+| `reset-staff-password` | `supabase/functions/reset-staff-password/` | Resets staff password to a temporary one and requires a password change |
 | `confirm-staff-password-changed` | `supabase/functions/confirm-staff-password-changed/` | Updates staff password and clears `must_change_password` |
 
 ---
