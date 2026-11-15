@@ -25,6 +25,16 @@ export async function toggleStaffAccountStatus(staffId: string, activate: boolea
   }
 }
 
+export async function resetStaffPassword(staffId: string): Promise<{ username: string; temporary_password: string }> {
+  const { data, error } = await supabase.functions.invoke('reset-staff-password', {
+    body: { staff_id: staffId },
+  })
+  if (error || !data || data.error) {
+    throw new Error(await getFunctionErrorMessage(error, data?.error, 'Could not reset staff password'))
+  }
+  return data as { username: string; temporary_password: string }
+}
+
 export async function updateStaffRole(staffId: string, role: 'teacher' | 'headteacher'): Promise<'teacher' | 'headteacher'> {
   const { data, error } = await supabase.functions.invoke('update-staff-role', {
     body: { staff_id: staffId, role },

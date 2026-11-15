@@ -12,14 +12,16 @@ import {
   fetchTeacherCertifications,
   fetchTeacherDetails,
   removeTeacherAssignment,
+  resetStaffPassword,
   toggleStaffAccountStatus,
   updateStaffRole,
   upsertTeacherDetails,
 } from '../../lib/staff/staffApi'
-import { TeacherDetails } from '../../types'
+import { StaffMember, TeacherDetails } from '../../types'
 import { SearchBar } from '../SearchBar'
 import { CreateStaffAccountModal } from './CreateStaffAccountModal'
 import { PageHeader } from '../PageHeader'
+import { ConfirmDialog } from '../ConfirmDialog'
 
 const EMPTY_DETAILS: TeacherDetails = {
   id: '',
@@ -425,6 +427,14 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [pendingPasswordReset, setPendingPasswordReset] = useState<StaffMember | null>(null)
+  const [newPassword, setNewPassword] = useState<{
+    fullName: string
+    username: string
+    password: string
+  } | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const [roleErrors, setRoleErrors] = useState<Record<string, string>>({})
   const queryClient = useQueryClient()
 
@@ -437,6 +447,28 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
       queryClient.invalidateQueries({ queryKey: ['staff-list'] })
     },
     onError: (error) => setActionError(error instanceof Error ? error.message : 'Could not update staff account status.'),
+  })
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (member: StaffMember) => ({
+      member,
+      result: await resetStaffPassword(member.id),
+    }),
+    onSuccess: ({ member, result }) => {
+      setPendingPasswordReset(null)
+      setActionError(null)
+      setCopyError(null)
+      setCopied(false)
+      setNewPassword({
+        fullName: member.full_name,
+        username: result.username,
+        password: result.temporary_password,
+      })
+    },
+    onError: (error) => {
+      setPendingPasswordReset(null)
+      setActionError(error instanceof Error ? error.message : 'Could not reset staff password.')
+    },
   })
 
   const roleMutation = useMutation({
@@ -526,48 +558,61 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
                     {expandedId === s.id ? 'Hide' : 'View Details'}
                   </span>
                 </button>
-                <div className="flex w-full items-center justify-between gap-2 border-t border-gray-100 pt-3 sm:w-auto sm:justify-end sm:border-0 sm:pt-0">
+                <div className="flex w-full flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 sm:w-auto sm:justify-end sm:border-0 sm:pt-0">
                   <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${s.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {s.is_active ? 'Active' : 'Inactive'}
                   </span>
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <select
-                      value={s.role}
-                      aria-label={`Change role for ${s.full_name}`}
-                      aria-describedby={roleErrors[s.id] ? `role-error-${s.id}` : undefined}
-                      aria-invalid={Boolean(roleErrors[s.id])}
-                      onChange={(event) => {
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <select
+                        value={s.role}
+                        aria-label={`Change role for ${s.full_name}`}
+                        aria-describedby={roleErrors[s.id] ? `role-error-${s.id}` : undefined}
+                        aria-invalid={Boolean(roleErrors[s.id])}
+                        onChange={(event) => {
+                          setActionError(null)
+                          setRoleErrors((current) => {
+                            const next = { ...current }
+                            delete next[s.id]
+                            return next
+                          })
+                          roleMutation.mutate({ staffId: s.id, role: event.target.value as 'teacher' | 'headteacher' })
+                        }}
+                        disabled={roleMutation.isPending}
+                        className="rounded-lg border border-gray-200 px-2 py-2 text-xs text-gray-700 focus:border-gray-900 focus:outline-none disabled:opacity-50 sm:py-1.5"
+                      >
+                        <option value="teacher">Teacher</option>
+                        <option value="headteacher">Headteacher</option>
+                      </select>
+                      {roleErrors[s.id] && (
+                        <p id={`role-error-${s.id}`} role="alert" className="max-w-56 text-xs text-red-700">
+                          {roleErrors[s.id]}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
                         setActionError(null)
-                        setRoleErrors((current) => {
-                          const next = { ...current }
-                          delete next[s.id]
-                          return next
-                        })
-                        roleMutation.mutate({ staffId: s.id, role: event.target.value as 'teacher' | 'headteacher' })
+                        setPendingPasswordReset(s)
                       }}
-                      disabled={roleMutation.isPending}
-                      className="rounded-lg border border-gray-200 px-2 py-2 text-xs text-gray-700 focus:border-gray-900 focus:outline-none disabled:opacity-50 sm:py-1.5"
+                      disabled={resetPasswordMutation.isPending}
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5 sm:py-1.5"
                     >
-                      <option value="teacher">Teacher</option>
-                      <option value="headteacher">Headteacher</option>
-                    </select>
-                    {roleErrors[s.id] && (
-                      <p id={`role-error-${s.id}`} role="alert" className="max-w-56 text-xs text-red-700">
-                        {roleErrors[s.id]}
-                      </p>
-                    )}
+                      Reset password
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActionError(null)
+                        statusMutation.mutate({ staffId: s.id, activate: !s.is_active })
+                      }}
+                      disabled={statusMutation.isPending}
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5 sm:py-1.5"
+                    >
+                      {s.is_active ? 'Deactivate' : 'Reactivate'}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActionError(null)
-                      statusMutation.mutate({ staffId: s.id, activate: !s.is_active })
-                    }}
-                    disabled={statusMutation.isPending}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-2.5 sm:py-1.5"
-                  >
-                    {s.is_active ? 'Deactivate' : 'Reactivate'}
-                  </button>
                 </div>
               </div>
 
@@ -585,6 +630,61 @@ export function StaffList({ initialSearch }: { initialSearch?: string } = {}) {
         <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {actionError}
         </p>
+      )}
+
+      {pendingPasswordReset && (
+        <ConfirmDialog
+          title="Reset staff password"
+          message={`Generate a new temporary password for ${pendingPasswordReset.full_name}? Their current password will stop working, and they will need to choose a new password at their next sign-in.`}
+          confirmLabel={resetPasswordMutation.isPending ? 'Resetting...' : 'Reset password'}
+          onCancel={() => setPendingPasswordReset(null)}
+          onConfirm={() => {
+            if (!resetPasswordMutation.isPending) resetPasswordMutation.mutate(pendingPasswordReset)
+          }}
+        />
+      )}
+
+      {newPassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-lg">
+            <h3 className="text-lg font-semibold text-gray-900">Password reset</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Share these credentials with {newPassword.fullName} directly. They will be asked to change the password after signing in.
+            </p>
+            <div className="mt-4 space-y-2 rounded-lg bg-gray-50 p-4 text-left text-sm">
+              <p>
+                <span className="font-medium text-gray-700">Username:</span> {newPassword.username}
+              </p>
+              <p>
+                <span className="font-medium text-gray-700">Temporary password:</span> {newPassword.password}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                setCopyError(null)
+                setCopied(false)
+                try {
+                  await navigator.clipboard.writeText(newPassword.password)
+                  setCopied(true)
+                } catch {
+                  setCopyError('Could not copy the password. Please select and copy it manually.')
+                }
+              }}
+              className="mt-4 w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {copied ? 'Copied' : 'Copy password'}
+            </button>
+            {copyError && <p role="alert" className="mt-2 text-sm text-red-600">{copyError}</p>}
+            <button
+              type="button"
+              onClick={() => setNewPassword(null)}
+              className="mt-3 w-full rounded-lg bg-gray-900 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Done
+            </button>
+          </div>
+        </div>
       )}
 
       {showCreateModal && (
