@@ -3,7 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../context/AuthContext'
 import { fetchTeacherAssignments } from '../../lib/staff/staffApi'
 import { fetchClasses } from '../../lib/queries'
-import { fetchGradeGrid, fetchGradeScale, fetchTerms, saveGrades, scoreToLetter } from '../../lib/gradesApi'
+import {
+  fetchGradeGrid,
+  fetchGradeScale,
+  fetchSubjects,
+  fetchTerms,
+  saveGrades,
+  scoreToLetter,
+} from '../../lib/gradesApi'
 import { AssessmentType } from '../../types'
 
 type Mode = 'enter' | 'view'
@@ -96,16 +103,22 @@ export function TeacherGrades() {
   })
 
   // ================= View Grades =================
-  // Subject is restricted to ones this teacher actually teaches
-  // (derived from their assignments); class is NOT restricted —
-  // fetchClasses() returns every class in the school, since a
-  // teacher may view (not edit) any class's grades for a subject
-  // they teach elsewhere.
+  // Teachers can view subjects they teach across school classes;
+  // headteachers can view every school subject and class.
+  const isHeadteacher = profile?.role === 'headteacher'
+  const { data: schoolSubjects = [] } = useQuery({
+    queryKey: ['subjects'],
+    queryFn: fetchSubjects,
+    enabled: mode === 'view' && isHeadteacher,
+  })
+
   const distinctSubjects = useMemo(() => {
+    if (isHeadteacher) return schoolSubjects
+
     const seen = new Map<string, string>()
     for (const a of assignments) seen.set(a.subject_id, a.subject_name)
     return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
-  }, [assignments])
+  }, [assignments, isHeadteacher, schoolSubjects])
 
   const [viewSubjectId, setViewSubjectId] = useState('')
   const [viewClassId, setViewClassId] = useState('')
@@ -267,10 +280,7 @@ export function TeacherGrades() {
           <div className="flex flex-wrap gap-2">
             <select
               value={viewSubjectId}
-              onChange={(e) => {
-                setViewSubjectId(e.target.value)
-                setViewClassId('')
-              }}
+              onChange={(e) => setViewSubjectId(e.target.value)}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
             >
               <option value="">Select subject</option>
@@ -284,8 +294,7 @@ export function TeacherGrades() {
             <select
               value={viewClassId}
               onChange={(e) => setViewClassId(e.target.value)}
-              disabled={viewSubjectId === ''}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none disabled:opacity-50"
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
             >
               <option value="">Select class</option>
               {allClasses.map((c) => (
