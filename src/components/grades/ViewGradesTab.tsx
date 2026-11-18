@@ -5,14 +5,12 @@ import { useAuth } from '../../context/AuthContext'
 import {
   fetchGradeRelease,
   fetchGradeScale,
-  fetchProgressEntriesForStudent,
-  fetchProgressReportFields,
   fetchTerms,
   fetchViewGrid,
   releaseGrades,
   scoreToLetter,
 } from '../../lib/gradesApi'
-import { generateGradeReportPdf, generateProgressReportPdf } from '../../lib/pdf'
+import { generateGradeReportPdf } from '../../lib/pdf'
 import { AssessmentType } from '../../types'
 import { ConfirmDialog } from '../ConfirmDialog'
 
@@ -29,10 +27,6 @@ export function ViewGradesTab() {
   const { data: classes = [] } = useQuery({ queryKey: ['classes'], queryFn: fetchClasses })
   const { data: terms = [] } = useQuery({ queryKey: ['terms'], queryFn: fetchTerms })
   const { data: gradeScale = [] } = useQuery({ queryKey: ['grade-scale'], queryFn: fetchGradeScale })
-  const { data: progressFields = [] } = useQuery({
-    queryKey: ['progress-fields'],
-    queryFn: fetchProgressReportFields,
-  })
 
   const viewGridQuery = useQuery({
     queryKey: ['view-grid', classId, termId],
@@ -94,29 +88,6 @@ export function ViewGradesTab() {
         academicYear: selectedTerm.academic_year,
         assessmentType,
         rows,
-      })
-    } finally {
-      setDownloadingId(null)
-    }
-  }
-
-  async function handleDownloadProgressReport(row: { student_id: string; full_name: string; admission_number: string }) {
-    if (!profile || !selectedClass || !selectedTerm) return
-
-    setDownloadingId(`progress-${row.student_id}`)
-    try {
-      const values = await fetchProgressEntriesForStudent(row.student_id, termId)
-      const fields = progressFields.map((f) => ({ label: f.label, value: values[f.id] ?? '' }))
-
-      await generateProgressReportPdf({
-        schoolName: profile.school_name,
-        logoUrl: profile.school_logo_url,
-        studentName: row.full_name,
-        admissionNumber: row.admission_number,
-        className: selectedClass.name,
-        termName: selectedTerm.name,
-        academicYear: selectedTerm.academic_year,
-        fields,
       })
     } finally {
       setDownloadingId(null)
@@ -232,13 +203,6 @@ export function ViewGradesTab() {
                           className="text-xs font-medium text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
                         >
                           {assessmentType === 'midterm' ? 'Midterm Grade PDF' : 'End of Term Grade PDF'}
-                        </button>
-                        <button
-                          onClick={() => handleDownloadProgressReport(row)}
-                          disabled={downloadingId === `progress-${row.student_id}`}
-                          className="text-xs font-medium text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
-                        >
-                          Progress Report PDF
                         </button>
                       </div>
                     </td>
