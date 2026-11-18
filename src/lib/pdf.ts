@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import type { AssessmentType } from '../types'
 
 // Cloudinary URLs are cross-origin, so the browser needs the image
 // fetched and converted to a data URL before jsPDF can embed it —
@@ -266,6 +267,7 @@ export async function generateGradeReportPdf(params: {
   className: string
   termName: string
   academicYear: string
+  assessmentType?: AssessmentType
   rows: GradeReportRow[]
 }) {
   const doc = new jsPDF()
@@ -273,7 +275,9 @@ export async function generateGradeReportPdf(params: {
   let y = await drawHeader(doc, {
     schoolName: params.schoolName,
     logoUrl: params.logoUrl,
-    subtitle: 'Grade Report',
+    subtitle: params.assessmentType
+      ? `Grade Report — ${params.assessmentType === 'midterm' ? 'Midterm' : 'End of Term'}`
+      : 'Grade Report',
   })
 
   y = drawStudentInfo(doc, y, params)
@@ -281,9 +285,14 @@ export async function generateGradeReportPdf(params: {
   doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
   doc.text('Subject', 20, y)
-  doc.text('Midterm', 95, y)
-  doc.text('End of Term', 125, y)
-  doc.text('Grade', 170, y)
+  if (params.assessmentType) {
+    doc.text(params.assessmentType === 'midterm' ? 'Midterm' : 'End of Term', 105, y)
+    doc.text('Grade', 160, y)
+  } else {
+    doc.text('Midterm', 95, y)
+    doc.text('End of Term', 125, y)
+    doc.text('Grade', 170, y)
+  }
   doc.setFont('helvetica', 'normal')
   y += 3
   doc.line(20, y, 190, y)
@@ -291,9 +300,15 @@ export async function generateGradeReportPdf(params: {
 
   for (const row of params.rows) {
     doc.text(row.subject, 20, y)
-    doc.text(row.midterm !== null ? String(row.midterm) : '-', 95, y)
-    doc.text(row.endOfTerm !== null ? String(row.endOfTerm) : '-', 125, y)
-    doc.text(row.letter ?? '-', 170, y)
+    if (params.assessmentType) {
+      const score = params.assessmentType === 'midterm' ? row.midterm : row.endOfTerm
+      doc.text(score !== null ? String(score) : '-', 105, y)
+      doc.text(row.letter ?? '-', 160, y)
+    } else {
+      doc.text(row.midterm !== null ? String(row.midterm) : '-', 95, y)
+      doc.text(row.endOfTerm !== null ? String(row.endOfTerm) : '-', 125, y)
+      doc.text(row.letter ?? '-', 170, y)
+    }
     y += 8
     if (y > 270) {
       doc.addPage()
@@ -301,8 +316,9 @@ export async function generateGradeReportPdf(params: {
     }
   }
 
+  const assessmentSuffix = params.assessmentType ? `_${params.assessmentType}` : ''
   doc.save(
-    `${params.studentName.replace(/\s+/g, '_')}_${params.termName.replace(/\s+/g, '_')}_grade_report.pdf`,
+    `${params.studentName.replace(/\s+/g, '_')}_${params.termName.replace(/\s+/g, '_')}${assessmentSuffix}_grade_report.pdf`,
   )
 }
 

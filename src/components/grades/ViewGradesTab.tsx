@@ -13,6 +13,7 @@ import {
   scoreToLetter,
 } from '../../lib/gradesApi'
 import { generateGradeReportPdf, generateProgressReportPdf } from '../../lib/pdf'
+import { AssessmentType } from '../../types'
 import { ConfirmDialog } from '../ConfirmDialog'
 
 export function ViewGradesTab() {
@@ -21,6 +22,7 @@ export function ViewGradesTab() {
 
   const [classId, setClassId] = useState('')
   const [termId, setTermId] = useState('')
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>('midterm')
   const [confirmingRelease, setConfirmingRelease] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
@@ -73,12 +75,12 @@ export function ViewGradesTab() {
     try {
       const rows = viewGridQuery.data.subjects.map((subject) => {
         const cell = row.bySubject[subject.id]
-        const finalScore = cell.end_of_term ?? cell.midterm
+        const score = assessmentType === 'midterm' ? cell.midterm : cell.end_of_term
         return {
           subject: subject.name,
-          midterm: cell.midterm,
-          endOfTerm: cell.end_of_term,
-          letter: scoreToLetter(gradeScale, finalScore),
+          midterm: assessmentType === 'midterm' ? score : null,
+          endOfTerm: assessmentType === 'end_of_term' ? score : null,
+          letter: scoreToLetter(gradeScale, score),
         }
       })
 
@@ -90,6 +92,7 @@ export function ViewGradesTab() {
         className: selectedClass.name,
         termName: selectedTerm.name,
         academicYear: selectedTerm.academic_year,
+        assessmentType,
         rows,
       })
     } finally {
@@ -149,6 +152,15 @@ export function ViewGradesTab() {
           ))}
         </select>
 
+        <select
+          value={assessmentType}
+          onChange={(e) => setAssessmentType(e.target.value as AssessmentType)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none"
+        >
+          <option value="midterm">Midterm</option>
+          <option value="end_of_term">End of Term</option>
+        </select>
+
         {classId !== '' && termId !== '' && (
           <div className="ml-auto flex items-center gap-3">
             {releaseQuery.data ? (
@@ -190,7 +202,9 @@ export function ViewGradesTab() {
                   {viewGridQuery.data?.subjects.map((s) => (
                     <th key={s.id} className="py-2 pr-4">
                       {s.name}
-                      <div className="text-[10px] font-normal text-gray-400">Mid / End / Grade</div>
+                      <div className="text-[10px] font-normal text-gray-400">
+                        {assessmentType === 'midterm' ? 'Midterm' : 'End of Term'} / Grade
+                      </div>
                     </th>
                   ))}
                   <th className="py-2 pr-4"></th>
@@ -202,11 +216,11 @@ export function ViewGradesTab() {
                     <td className="py-2 pr-4">{row.full_name}</td>
                     {viewGridQuery.data!.subjects.map((s) => {
                       const cell = row.bySubject[s.id]
-                      const finalScore = cell.end_of_term ?? cell.midterm
-                      const letter = scoreToLetter(gradeScale, finalScore)
+                      const score = assessmentType === 'midterm' ? cell.midterm : cell.end_of_term
+                      const letter = scoreToLetter(gradeScale, score)
                       return (
                         <td key={s.id} className="py-2 pr-4 text-xs">
-                          {cell.midterm ?? '-'} / {cell.end_of_term ?? '-'} / {letter ?? '-'}
+                          {score ?? '-'} / {letter ?? '-'}
                         </td>
                       )
                     })}
@@ -217,7 +231,7 @@ export function ViewGradesTab() {
                           disabled={downloadingId === `grade-${row.student_id}`}
                           className="text-xs font-medium text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
                         >
-                          Grade Report PDF
+                          {assessmentType === 'midterm' ? 'Midterm Grade PDF' : 'End of Term Grade PDF'}
                         </button>
                         <button
                           onClick={() => handleDownloadProgressReport(row)}
