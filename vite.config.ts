@@ -43,7 +43,6 @@ export default defineConfig({
         display: 'standalone',
         background_color: '#0f172a',
         theme_color: '#0f172a',
-        orientation: 'portrait-primary'
       },
       workbox: {
         cleanupOutdatedCaches: true,
